@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
 
-from localization import Localizer, detect_system_language
+from localization import DEFAULT_LANGUAGE, Localizer
 from settings import default_logs_dir
 from ui_main import CompressorWindow
 
@@ -38,7 +38,7 @@ def install_exception_hook() -> None:
             "".join(traceback.format_exception(exc_type, exc_value, exc_traceback)),
         )
         try:
-            localizer = Localizer(detect_system_language())
+            localizer = Localizer(DEFAULT_LANGUAGE)
             messagebox.showerror(
                 localizer.t("app.title"),
                 localizer.t("message.unhandled_error", error=exc_value),

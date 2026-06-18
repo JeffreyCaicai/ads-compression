@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from localization import SUPPORTED_LANGUAGES, Localizer, normalize_language
+from localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Localizer, normalize_language
 
 
 class LocalizationTests(unittest.TestCase):
@@ -14,8 +14,11 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(normalize_language("en_US"), "en_US")
         self.assertEqual(normalize_language("id_ID"), "id_ID")
 
-    def test_normalize_language_falls_back_to_chinese(self):
-        self.assertEqual(normalize_language("fr_FR"), "zh_CN")
+    def test_default_language_is_english(self):
+        self.assertEqual(DEFAULT_LANGUAGE, "en_US")
+
+    def test_normalize_language_falls_back_to_english(self):
+        self.assertEqual(normalize_language("fr_FR"), "en_US")
 
     def test_localizer_translates_status_labels(self):
         localizer = Localizer("id_ID")

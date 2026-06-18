@@ -342,7 +342,7 @@ tools/ffmpeg/bin/ffprobe.exe
 - English
 - Bahasa Indonesia
 
-可在窗口顶部右侧的语言下拉框中切换。切换后按钮、表格列名、状态、弹窗和常用提示会立即更新。
+默认界面语言为 English。可在窗口顶部右侧的语言下拉框中切换为中文或 Bahasa Indonesia。切换后按钮、表格列名、状态、弹窗和常用提示会立即更新。
 
 ## 11. 添加视频
 

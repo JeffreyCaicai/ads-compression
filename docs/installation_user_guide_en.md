@@ -342,7 +342,7 @@ The application supports:
 - English
 - Bahasa Indonesia
 
-Use the language dropdown at the top right of the window. Buttons, table headers, status labels, dialogs, and common messages update immediately.
+The default interface language is English. Use the language dropdown at the top right of the window to switch to Chinese or Bahasa Indonesia. Buttons, table headers, status labels, dialogs, and common messages update immediately.
 
 ## 11. Add Videos
 

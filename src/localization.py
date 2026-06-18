@@ -4,7 +4,7 @@ import locale
 from dataclasses import dataclass
 
 
-DEFAULT_LANGUAGE = "zh_CN"
+DEFAULT_LANGUAGE = "en_US"
 SUPPORTED_LANGUAGES = ("zh_CN", "en_US", "id_ID")
 
 

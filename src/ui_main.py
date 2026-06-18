@@ -17,7 +17,7 @@ from ffmpeg_utils import (
     probe_video,
     validate_ffmpeg_bin_dir,
 )
-from localization import Localizer, detect_system_language
+from localization import DEFAULT_LANGUAGE, Localizer
 from models import CompressionResult, FFmpegPaths, VideoJob
 from report import write_report
 from settings import (
@@ -40,7 +40,7 @@ from settings import (
 class CompressorWindow(tk.Tk):
     def __init__(self, ffmpeg_paths: FFmpegPaths | None = None) -> None:
         super().__init__()
-        self.localizer = Localizer(detect_system_language())
+        self.localizer = Localizer(DEFAULT_LANGUAGE)
         self.title(self.localizer.t("app.title"))
         self.geometry(WINDOW_SIZE)
         self.minsize(1000, 660)

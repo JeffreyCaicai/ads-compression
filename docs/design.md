@@ -25,7 +25,7 @@ V1.1 增加本地化模块，支持：
 - `en_US`：English。
 - `id_ID`：Bahasa Indonesia，适配雅加达团队使用。
 
-程序启动时会读取系统 locale，并通过 `normalize_language()` 映射到支持语言。无法识别时回退到中文。
+程序启动默认使用英文 `en_US`，不跟随系统语言自动切换。用户可以在界面顶部右侧手动切换为中文或 Bahasa Indonesia。无法识别的语言 code 会回退到英文。
 
 GUI 顶部右侧提供语言下拉框。用户切换语言后，以下内容会立即刷新：
 

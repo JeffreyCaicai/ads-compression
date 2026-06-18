@@ -12,7 +12,7 @@
 - English
 - Bahasa Indonesia
 
-启动后可在窗口顶部右侧的“界面语言 / Language / Bahasa”下拉框中切换。切换后按钮、表格列名、状态、弹窗和常用提示会立即更新。
+默认界面语言为 English。启动后可在窗口顶部右侧的“Language”下拉框中切换为中文或 Bahasa Indonesia。切换后按钮、表格列名、状态、弹窗和常用提示会立即更新。
 
 如果是从源码运行，进入项目目录后执行：
 
