@@ -20,6 +20,7 @@ Latest application code commit before this handoff document:
 Recent important application commits:
 
 ```text
+148d24b Add Codex handover guide
 0a45905 Preserve source filename for compressed output
 463dde5 Add high motion quality mode
 540ded6 Fix FFmpeg lookup in PyInstaller bundle
@@ -175,7 +176,7 @@ python -m unittest discover -s tests -v
 Expected current result:
 
 ```text
-16 tests, OK
+17 tests, OK
 ```
 
 Build Windows app:
@@ -223,6 +224,7 @@ The GUI has a `Quality Mode` dropdown:
 ```text
 Standard - General Compression
 High Motion - Better Motion Quality
+Screen Safe - High Motion
 ```
 
 Standard mode:
@@ -243,13 +245,30 @@ bufsize 11000k
 
 High Motion was added because high-motion ads, such as cars moving quickly at the start of a clip, showed blurred outlines under the original 3500k cap.
 
+Screen Safe - High Motion mode:
+
+```text
+CRF 21
+profile main
+GOP 30
+maxrate 6500k
+bufsize 12000k
+tune fastdecode
+B-frames disabled
+refs 2
+```
+
+Screen Safe - High Motion was added after compressed files played correctly on desktop computers but showed blocks, glitches, or frame corruption during the first second on signage screens. It does not replace High Motion; it lowers signage hardware decoder pressure for problematic high-motion starts.
+
 Code:
 
 ```text
 src/settings.py
 src/encoder.py
 src/ui_main.py
+src/localization.py
 tests/test_naming.py
+tests/test_localization.py
 ```
 
 ### Output Filename Rule
@@ -348,6 +367,7 @@ created_at
 ```text
 standard
 high_motion
+screen_safe_high_motion
 ```
 
 Code:
@@ -375,6 +395,8 @@ dist\SignageVideoCompressor\tools\ffmpeg\bin\
 3. If users run the app from the source directory instead of `dist`, logs may appear in the source `logs/` folder.
 4. When recursively adding folders, the app skips the default `compressed` directory to avoid importing output files again.
 5. High Motion improves motion detail but creates larger files.
+6. Screen Safe - High Motion is for files that play correctly on a computer but show first-second corruption on signage hardware.
+7. If PyInstaller fails with `Access is denied` while removing `dist\SignageVideoCompressor`, close the running app and any Explorer windows inside `dist`, then build again.
 
 ## Recommended Manual QA Before Sending A Build
 
@@ -391,17 +413,18 @@ dist\SignageVideoCompressor\SignageVideoCompressor.exe
 4. Add a small video with audio.
 5. Compress in Standard mode.
 6. Compress a high-motion video in High Motion mode.
-7. Confirm output filenames preserve original names.
-8. Confirm CSV has `encoding_mode`, `crf`, and `preset`.
-9. Confirm output audio is present.
-10. Confirm no-audio source fails clearly.
+7. Compress a previously problematic first-second signage video in Screen Safe - High Motion mode.
+8. Confirm output filenames preserve original names.
+9. Confirm CSV has `encoding_mode`, `crf`, and `preset`.
+10. Confirm output audio is present.
+11. Confirm no-audio source fails clearly.
 
 ## Suggested Next Development Tasks
 
 These are not required immediately, but are likely useful:
 
 1. Add an About/Version label in the GUI so users can tell which build they are running.
-2. Add a small tooltip or helper text explaining when to use High Motion.
+2. Add a small tooltip or helper text explaining when to use High Motion and Screen Safe - High Motion.
 3. Add a runtime self-check panel showing detected FFmpeg path.
 4. Add a version number to CSV reports.
 5. Add a sample test video workflow for QA if sample media can be stored internally.
@@ -439,5 +462,5 @@ git push
 ## Good Starting Prompt For New Codex Session
 
 ```text
-We are continuing development on JeffreyCaicai/ads-compression, a Python Tkinter Windows desktop app for signage video compression. Please read docs/codex_handover.md, docs/design.md, README.md, then inspect git status and recent commits before making changes. Preserve the current behavior: default English UI, Standard and High Motion quality modes, output filename preserves source stem, FFmpeg lookup supports PyInstaller _internal, audio is mandatory, and tests should pass with python -m unittest discover -s tests -v.
+We are continuing development on JeffreyCaicai/ads-compression, a Python Tkinter Windows desktop app for signage video compression. Please read docs/codex_handover.md, docs/design.md, README.md, then inspect git status and recent commits before making changes. Preserve the current behavior: default English UI, Standard, High Motion, and Screen Safe - High Motion quality modes, output filename preserves source stem, FFmpeg lookup supports PyInstaller _internal, audio is mandatory, and tests should pass with python -m unittest discover -s tests -v.
 ```

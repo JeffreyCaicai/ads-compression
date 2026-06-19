@@ -1,6 +1,6 @@
 # 广告屏视频压缩工具安装与操作指导手册
 
-版本：V1.1  
+版本：V1.3
 适用系统：Windows 10 / Windows 11  
 适用对象：打包交付人员、运营同事、项目执行同事、视频素材整理同事
 
@@ -406,7 +406,8 @@ Car Ad_3.mp4
    - 检测疑似静音音轨。
 4. 根据素材选择 Quality Mode：
    - Standard：普通广告，文件更小；
-   - High Motion：汽车、运动、快切、复杂背景等素材，运动画面更清晰，文件更大。
+   - High Motion：汽车、运动、快切、复杂背景等素材，运动画面更清晰，文件更大；
+   - Screen Safe - High Motion：压缩文件在电脑播放正常，但广告屏开头约 1 秒出现花屏、块状异常或局部错位时使用。
 5. 点击“开始压缩”。
 6. 等待进度条完成。
 
@@ -516,9 +517,29 @@ logs/app_YYYYMMDD.log
 
 如果源文件本身是静音音轨，程序会标记“疑似静音”，但仍允许压缩。
 
+### 打包时报 Access is denied
+
+如果运行 `.\build_windows.ps1` 时提示：
+
+```text
+PermissionError: [WinError 5] Access is denied: '...\dist\SignageVideoCompressor'
+```
+
+通常是旧版 `SignageVideoCompressor.exe` 还在运行，或资源管理器正在打开 `dist\SignageVideoCompressor` 目录。处理方式：
+
+1. 关闭已经打开的 Signage Video Compressor 程序窗口。
+2. 关闭正在查看 `dist` 或 `dist\SignageVideoCompressor` 的资源管理器窗口。
+3. 重新运行：
+
+```powershell
+.\build_windows.ps1
+```
+
+如果仍然失败，可在任务管理器中结束 `SignageVideoCompressor.exe` 后再打包。
+
 ## 19. 固定压缩参数
 
-本工具提供两个固定模式：
+本工具提供三个固定模式：
 
 ```text
 Standard:
@@ -531,6 +552,13 @@ High Motion:
 H.264 / libx264, CRF 21, preset slow,
 profile high, level 4.1, yuv420p, 30 fps,
 GOP 60, maxrate 5500k, bufsize 11000k,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+Screen Safe - High Motion:
+H.264 / libx264, CRF 21, preset slow,
+profile main, level 4.1, yuv420p, 30 fps,
+GOP 30, maxrate 6500k, bufsize 12000k,
+tune fastdecode, 禁用 B 帧, refs 2,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 ```
 

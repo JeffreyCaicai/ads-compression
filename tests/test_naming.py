@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from encoder import build_output_path, build_ffmpeg_args
-from settings import MODE_HIGH_MOTION, MODE_STANDARD
+from settings import MODE_HIGH_MOTION, MODE_SCREEN_SAFE_HIGH_MOTION, MODE_STANDARD
 
 
 class NamingTests(unittest.TestCase):
@@ -83,6 +83,31 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-crf") + 1], "21")
         self.assertEqual(args[args.index("-maxrate") + 1], "5500k")
         self.assertEqual(args[args.index("-bufsize") + 1], "11000k")
+
+    def test_screen_safe_high_motion_args_reduce_signage_decoder_pressure(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "screen-start-glitch.mp4"
+            output = temp_path / "out.mp4"
+
+            args = build_ffmpeg_args(
+                Path("ffmpeg.exe"),
+                source,
+                output,
+                overwrite=True,
+                encoding_mode=MODE_SCREEN_SAFE_HIGH_MOTION,
+            )
+
+        self.assertEqual(args[args.index("-crf") + 1], "21")
+        self.assertEqual(args[args.index("-profile:v") + 1], "main")
+        self.assertEqual(args[args.index("-g") + 1], "30")
+        self.assertEqual(args[args.index("-keyint_min") + 1], "30")
+        self.assertEqual(args[args.index("-sc_threshold") + 1], "40")
+        self.assertEqual(args[args.index("-maxrate") + 1], "6500k")
+        self.assertEqual(args[args.index("-bufsize") + 1], "12000k")
+        self.assertEqual(args[args.index("-tune") + 1], "fastdecode")
+        self.assertEqual(args[args.index("-bf") + 1], "0")
+        self.assertEqual(args[args.index("-refs") + 1], "2")
 
 
 if __name__ == "__main__":

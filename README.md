@@ -40,7 +40,7 @@ tools/ffmpeg/bin/ffprobe.exe
 
 ## 画质模式
 
-界面提供两种 Quality Mode：
+界面提供三种 Quality Mode：
 
 ```text
 Standard - General Compression
@@ -50,9 +50,13 @@ CRF 23 / maxrate 3500k / bufsize 7000k
 High Motion - Better Motion Quality
 CRF 21 / maxrate 5500k / bufsize 11000k
 适合汽车、运动、快切、复杂背景等高运动素材，画质更稳，文件会更大。
+
+Screen Safe - High Motion
+CRF 21 / maxrate 6500k / bufsize 12000k / GOP 30 / fastdecode
+适合电脑播放正常、但广告屏开头约 1 秒出现花屏或块状异常的高运动素材。文件会更大，优先保证屏端解码稳定。
 ```
 
-默认使用 Standard。如果上屏发现车身轮廓、快速移动物体或复杂背景发糊，建议切换到 High Motion 后重新压缩。
+默认使用 Standard。如果上屏发现车身轮廓、快速移动物体或复杂背景发糊，建议切换到 High Motion 后重新压缩。如果电脑播放正常但广告屏开头出现花屏、残块或局部错位，建议使用 Screen Safe - High Motion。
 
 ## 输出文件在哪里
 
@@ -131,7 +135,7 @@ tools/ffmpeg/bin/ffprobe.exe
 
 ## 压缩参数
 
-本工具不提供 H.265、云上传、剪辑、水印等功能。视频输出统一为 H.264 / AAC / MP4，并提供两个固定模式：
+本工具不提供 H.265、云上传、剪辑、水印等功能。视频输出统一为 H.264 / AAC / MP4，并提供三个固定模式：
 
 ```text
 Standard:
@@ -142,6 +146,12 @@ AAC 96k, 48000 Hz, 双声道, MP4 + faststart
 High Motion:
 H.264 / libx264, preset slow, CRF 21,
 maxrate 5500k, bufsize 11000k,
+AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+
+Screen Safe - High Motion:
+H.264 / libx264, preset slow, CRF 21,
+profile main, GOP 30, maxrate 6500k, bufsize 12000k,
+tune fastdecode, no B-frames, refs 2,
 AAC 96k, 48000 Hz, 双声道, MP4 + faststart
 ```
 

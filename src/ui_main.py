@@ -29,13 +29,12 @@ from settings import (
     DEFAULT_ENCODING_MODE,
     DEFAULT_OUTPUT_FOLDER_NAME,
     ENCODING_PRESETS,
-    MODE_HIGH_MOTION,
-    MODE_STANDARD,
     STATUS_CANCELLED,
     STATUS_FAILED,
     STATUS_PENDING,
     STATUS_PROBING,
     STATUS_SUCCESS,
+    SUPPORTED_ENCODING_MODES,
     SUPPORTED_EXTENSIONS,
     WINDOW_SIZE,
 )
@@ -112,7 +111,7 @@ class CompressorWindow(tk.Tk):
         options.pack(fill=tk.X, pady=(0, 8))
         self.quality_mode_label = ttk.Label(options)
         self.quality_mode_label.pack(side=tk.LEFT, padx=(0, 8))
-        self.quality_mode_combo = ttk.Combobox(options, state="readonly", width=34)
+        self.quality_mode_combo = ttk.Combobox(options, state="readonly", width=38)
         self.quality_mode_combo.pack(side=tk.LEFT, padx=(0, 18))
         self.quality_mode_combo.bind("<<ComboboxSelected>>", self._on_quality_mode_selected)
         self.recursive_check = ttk.Checkbutton(options, variable=self.recursive_var)
@@ -553,7 +552,7 @@ class CompressorWindow(tk.Tk):
 
     def _on_quality_mode_selected(self, _event: object | None = None) -> None:
         selected = self.encoding_mode_var.get()
-        for mode in (MODE_STANDARD, MODE_HIGH_MOTION):
+        for mode in SUPPORTED_ENCODING_MODES:
             if selected == self.localizer.encoding_mode(mode):
                 self.encoding_mode_code = mode
                 break
@@ -582,7 +581,7 @@ class CompressorWindow(tk.Tk):
         self.output_label.configure(text=t("label.output_dir"))
         self.browse_output_btn.configure(text=t("button.browse"))
         self.quality_mode_label.configure(text=t("label.quality_mode"))
-        quality_values = [self.localizer.encoding_mode(mode) for mode in (MODE_STANDARD, MODE_HIGH_MOTION)]
+        quality_values = [self.localizer.encoding_mode(mode) for mode in SUPPORTED_ENCODING_MODES]
         self.quality_mode_combo.configure(values=quality_values)
         self.encoding_mode_var.set(self.localizer.encoding_mode(self.encoding_mode_code))
         self.quality_mode_combo.configure(textvariable=self.encoding_mode_var)

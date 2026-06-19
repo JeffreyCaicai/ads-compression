@@ -53,7 +53,7 @@ def build_ffmpeg_args(
 ) -> list[str]:
     overwrite_flag = "-y" if overwrite else "-y"
     preset = encoding_preset(encoding_mode)
-    return [
+    args = [
         str(ffmpeg_path),
         overwrite_flag,
         "-hide_banner",
@@ -70,38 +70,49 @@ def build_ffmpeg_args(
         "-crf",
         preset["crf"],
         "-profile:v",
-        "high",
+        preset["profile"],
         "-level:v",
-        "4.1",
+        preset["level"],
         "-pix_fmt",
         "yuv420p",
         "-r",
         "30",
         "-g",
-        "60",
+        preset["gop"],
         "-keyint_min",
-        "60",
+        preset["keyint_min"],
         "-sc_threshold",
-        "0",
+        preset["sc_threshold"],
         "-maxrate",
         preset["maxrate"],
         "-bufsize",
         preset["bufsize"],
-        "-c:a",
-        "aac",
-        "-b:a",
-        "96k",
-        "-ar",
-        "48000",
-        "-ac",
-        "2",
-        "-movflags",
-        "+faststart",
-        "-progress",
-        "pipe:1",
-        "-nostats",
-        str(output_path),
     ]
+    if preset.get("tune"):
+        args.extend(["-tune", preset["tune"]])
+    if preset.get("bf"):
+        args.extend(["-bf", preset["bf"]])
+    if preset.get("refs"):
+        args.extend(["-refs", preset["refs"]])
+    args.extend(
+        [
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            str(output_path),
+        ]
+    )
+    return args
 
 
 class Encoder:

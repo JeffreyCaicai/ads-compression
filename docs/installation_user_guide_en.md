@@ -1,6 +1,6 @@
 # Signage Video Compressor Installation and User Guide
 
-Version: V1.1  
+Version: V1.3
 Supported systems: Windows 10 / Windows 11  
 Audience: build owners, delivery owners, operations staff, project execution staff, and media preparation staff
 
@@ -406,7 +406,8 @@ If the output folder is the same as the source folder and the source file is alr
    - Detect Probably Silent Audio.
 4. Choose Quality Mode:
    - Standard: general ads, smaller files;
-   - High Motion: cars, sports, fast cuts, complex backgrounds, better motion detail, larger files.
+   - High Motion: cars, sports, fast cuts, complex backgrounds, better motion detail, larger files;
+   - Screen Safe - High Motion: use when the compressed file plays well on a computer but the signage screen shows blocks, glitches, or frame corruption during the first second.
 5. Click “Start Compression”.
 6. Wait for the progress bars to finish.
 
@@ -516,9 +517,29 @@ If the app shows “Success”, the output file has already passed AAC audio val
 
 If the source file itself contains silent audio, the app may mark it as “Probably Silent” while still allowing compression.
 
+### Build Shows Access is denied
+
+If `.\build_windows.ps1` shows:
+
+```text
+PermissionError: [WinError 5] Access is denied: '...\dist\SignageVideoCompressor'
+```
+
+the old `SignageVideoCompressor.exe` is usually still running, or File Explorer is opened inside `dist\SignageVideoCompressor`. To fix it:
+
+1. Close the Signage Video Compressor application window.
+2. Close any File Explorer window opened inside `dist` or `dist\SignageVideoCompressor`.
+3. Run again:
+
+```powershell
+.\build_windows.ps1
+```
+
+If it still fails, end `SignageVideoCompressor.exe` in Task Manager and build again.
+
 ## 19. Fixed Compression Parameters
 
-The app provides two fixed modes:
+The app provides three fixed modes:
 
 ```text
 Standard:
@@ -531,6 +552,13 @@ High Motion:
 H.264 / libx264, CRF 21, preset slow,
 profile high, level 4.1, yuv420p, 30 fps,
 GOP 60, maxrate 5500k, bufsize 11000k,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+Screen Safe - High Motion:
+H.264 / libx264, CRF 21, preset slow,
+profile main, level 4.1, yuv420p, 30 fps,
+GOP 30, maxrate 6500k, bufsize 12000k,
+tune fastdecode, B-frames disabled, refs 2,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 ```
 

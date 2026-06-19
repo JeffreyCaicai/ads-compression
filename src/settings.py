@@ -26,14 +26,20 @@ COMMON_SCREEN_RESOLUTIONS = {(1920, 1080), (1080, 1920), (1920, 360)}
 
 MODE_STANDARD = "standard"
 MODE_HIGH_MOTION = "high_motion"
+MODE_SCREEN_SAFE_HIGH_MOTION = "screen_safe_high_motion"
 DEFAULT_ENCODING_MODE = MODE_STANDARD
-SUPPORTED_ENCODING_MODES = (MODE_STANDARD, MODE_HIGH_MOTION)
+SUPPORTED_ENCODING_MODES = (MODE_STANDARD, MODE_HIGH_MOTION, MODE_SCREEN_SAFE_HIGH_MOTION)
 
 ENCODING_PRESETS = {
     MODE_STANDARD: {
         "suffix": COMPRESSED_SUFFIX,
         "crf": "23",
         "preset": "slow",
+        "profile": "high",
+        "level": "4.1",
+        "gop": "60",
+        "keyint_min": "60",
+        "sc_threshold": "0",
         "maxrate": "3500k",
         "bufsize": "7000k",
     },
@@ -41,8 +47,28 @@ ENCODING_PRESETS = {
         "suffix": HIGH_MOTION_SUFFIX,
         "crf": "21",
         "preset": "slow",
+        "profile": "high",
+        "level": "4.1",
+        "gop": "60",
+        "keyint_min": "60",
+        "sc_threshold": "0",
         "maxrate": "5500k",
         "bufsize": "11000k",
+    },
+    MODE_SCREEN_SAFE_HIGH_MOTION: {
+        "suffix": "_h264_crf21_screensafe_highmotion_aac96",
+        "crf": "21",
+        "preset": "slow",
+        "profile": "main",
+        "level": "4.1",
+        "gop": "30",
+        "keyint_min": "30",
+        "sc_threshold": "40",
+        "maxrate": "6500k",
+        "bufsize": "12000k",
+        "tune": "fastdecode",
+        "bf": "0",
+        "refs": "2",
     },
 }
 

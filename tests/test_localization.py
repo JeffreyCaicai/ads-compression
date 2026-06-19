@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Localizer, normalize_language
+from settings import MODE_SCREEN_SAFE_HIGH_MOTION
 
 
 class LocalizationTests(unittest.TestCase):
@@ -26,6 +27,10 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(localizer.t("status.success"), "Berhasil")
         self.assertEqual(localizer.t("button.start"), "Mulai Kompresi")
         self.assertEqual(localizer.encoding_mode("high_motion"), "High Motion - Kualitas Gerak Lebih Baik")
+        self.assertEqual(
+            localizer.encoding_mode(MODE_SCREEN_SAFE_HIGH_MOTION),
+            "Screen Safe - Gerak Tinggi Stabil",
+        )
 
     def test_supported_languages_have_display_names(self):
         self.assertEqual(set(SUPPORTED_LANGUAGES), {"zh_CN", "en_US", "id_ID"})
