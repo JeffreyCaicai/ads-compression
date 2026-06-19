@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from settings import STATUS_PENDING
+from settings import DEFAULT_ENCODING_MODE, STATUS_PENDING
 
 
 @dataclass
@@ -40,6 +40,7 @@ class VideoJob:
     progress: float = 0.0
     source_video_codec: str = ""
     source_audio_codec: str = ""
+    encoding_mode: str = DEFAULT_ENCODING_MODE
 
 
 @dataclass

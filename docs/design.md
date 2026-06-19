@@ -2,7 +2,7 @@
 
 ## 目标
 
-本工具面向不熟悉命令行的运营同事，用 Windows 桌面 GUI 封装固定的 FFmpeg 压缩流程。用户选择文件或文件夹后，程序按 H.264 CRF23 + AAC 96k 参数输出 MP4，并在完成后生成 CSV 报告。
+本工具面向不熟悉命令行的运营同事，用 Windows 桌面 GUI 封装固定的 FFmpeg 压缩流程。用户选择文件或文件夹后，程序按 H.264 + AAC 96k 参数输出 MP4，并在完成后生成 CSV 报告。
 
 ## 架构
 
@@ -65,13 +65,30 @@ unchecked, normal, no_audio, probably_silent, check_failed
 
 每个文件使用固定参数顺序压缩，不支持 H.265、云上传、剪辑、水印或自定义复杂参数。
 
-核心输出参数：
+V1.2 提供两个固定画质模式：
 
 ```text
+Standard:
 libx264, preset slow, CRF 23, profile high, level 4.1,
 yuv420p, 30fps, GOP 60, maxrate 3500k, bufsize 7000k,
 AAC 96k, 48000Hz, stereo, MP4 faststart
+
+High Motion:
+libx264, preset slow, CRF 21, profile high, level 4.1,
+yuv420p, 30fps, GOP 60, maxrate 5500k, bufsize 11000k,
+AAC 96k, 48000Hz, stereo, MP4 faststart
 ```
+
+Standard 为默认模式，保持原有文件体积优势。High Motion 用于汽车、运动、快切、复杂背景等高运动素材，减少快速运动画面中的轮廓发糊和细节损失。
+
+输出文件名按模式区分：
+
+```text
+Standard: 原文件名_h264_crf23_aac96.mp4
+High Motion: 原文件名_h264_crf21_highmotion_aac96.mp4
+```
+
+CSV 报告新增 `encoding_mode` 字段，并根据模式记录对应 `crf` 和 `preset`。
 
 所有 subprocess 调用必须使用 list 参数，支持中文路径、英文路径、印尼语文件名、空格路径和长文件名。
 
@@ -81,6 +98,7 @@ AAC 96k, 48000Hz, stereo, MP4 faststart
 
 - 输出命名规则；
 - FFmpeg 参数列表；
+- Standard / High Motion 两种编码模式；
 - ffprobe JSON 解析；
 - CSV 报告字段；
 - 本地化语言 fallback、语言名称和关键翻译。

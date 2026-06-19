@@ -7,6 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from encoder import build_output_path, build_ffmpeg_args
+from settings import MODE_HIGH_MOTION, MODE_STANDARD
 
 
 class NamingTests(unittest.TestCase):
@@ -16,7 +17,7 @@ class NamingTests(unittest.TestCase):
             source = temp_path / "中文 素材.mov"
             output_dir = temp_path / "out"
 
-            result = build_output_path(source, output_dir, overwrite=False)
+            result = build_output_path(source, output_dir, overwrite=False, encoding_mode=MODE_STANDARD)
 
         self.assertEqual(result, output_dir / "中文 素材_h264_crf23_aac96.mp4")
 
@@ -28,7 +29,7 @@ class NamingTests(unittest.TestCase):
             output_dir.mkdir()
             (output_dir / "ad_h264_crf23_aac96.mp4").write_bytes(b"old")
 
-            result = build_output_path(source, output_dir, overwrite=False)
+            result = build_output_path(source, output_dir, overwrite=False, encoding_mode=MODE_STANDARD)
 
         self.assertEqual(result, output_dir / "ad_h264_crf23_aac96_2.mp4")
 
@@ -38,7 +39,7 @@ class NamingTests(unittest.TestCase):
             source = temp_path / "input with space.mp4"
             output = temp_path / "out.mp4"
 
-            args = build_ffmpeg_args(Path("ffmpeg.exe"), source, output, overwrite=True)
+            args = build_ffmpeg_args(Path("ffmpeg.exe"), source, output, overwrite=True, encoding_mode=MODE_STANDARD)
 
         self.assertIsInstance(args, list)
         self.assertEqual(args[:5], [str(Path("ffmpeg.exe")), "-y", "-hide_banner", "-i", str(source)])
@@ -50,6 +51,28 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-b:a") + 1], "96k")
         self.assertEqual(args[args.index("-progress") + 1], "pipe:1")
         self.assertEqual(args[-1], str(output))
+
+    def test_high_motion_output_path_uses_distinct_suffix(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "car.mp4"
+            output_dir = temp_path / "out"
+
+            result = build_output_path(source, output_dir, overwrite=False, encoding_mode=MODE_HIGH_MOTION)
+
+        self.assertEqual(result, output_dir / "car_h264_crf21_highmotion_aac96.mp4")
+
+    def test_high_motion_ffmpeg_args_use_higher_quality_rate_cap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "car.mp4"
+            output = temp_path / "out.mp4"
+
+            args = build_ffmpeg_args(Path("ffmpeg.exe"), source, output, overwrite=True, encoding_mode=MODE_HIGH_MOTION)
+
+        self.assertEqual(args[args.index("-crf") + 1], "21")
+        self.assertEqual(args[args.index("-maxrate") + 1], "5500k")
+        self.assertEqual(args[args.index("-bufsize") + 1], "11000k")
 
 
 if __name__ == "__main__":

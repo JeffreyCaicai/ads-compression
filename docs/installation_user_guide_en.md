@@ -380,7 +380,8 @@ Users can also click “Browse” and choose another output folder.
 Output filename rule:
 
 ```text
-original_filename_h264_crf23_aac96.mp4
+Standard: original_filename_h264_crf23_aac96.mp4
+High Motion: original_filename_h264_crf21_highmotion_aac96.mp4
 ```
 
 If the target file already exists and “Overwrite Existing Output” is not enabled, the app creates a numbered filename:
@@ -388,6 +389,8 @@ If the target file already exists and “Overwrite Existing Output” is not ena
 ```text
 original_filename_h264_crf23_aac96_2.mp4
 original_filename_h264_crf23_aac96_3.mp4
+original_filename_h264_crf21_highmotion_aac96_2.mp4
+original_filename_h264_crf21_highmotion_aac96_3.mp4
 ```
 
 ## 13. Start Compression
@@ -398,8 +401,11 @@ original_filename_h264_crf23_aac96_3.mp4
    - Scan Subfolders;
    - Overwrite Existing Output;
    - Detect Probably Silent Audio.
-4. Click “Start Compression”.
-5. Wait for the progress bars to finish.
+4. Choose Quality Mode:
+   - Standard: general ads, smaller files;
+   - High Motion: cars, sports, fast cuts, complex backgrounds, better motion detail, larger files.
+5. Click “Start Compression”.
+6. Wait for the progress bars to finish.
 
 During processing, users can check:
 
@@ -463,7 +469,7 @@ After each batch finishes, the output folder contains:
 compression_report_YYYYMMDD_HHMMSS.csv
 ```
 
-The report includes source path, output path, status, error message, duration, resolution, original size, output size, size reduction, codec information, and audio status.
+The report includes source path, output path, status, error message, duration, resolution, original size, output size, size reduction, encoding_mode, codec information, and audio status.
 
 ## 18. Troubleshooting
 
@@ -509,23 +515,20 @@ If the source file itself contains silent audio, the app may mark it as “Proba
 
 ## 19. Fixed Compression Parameters
 
-The app always uses:
+The app provides two fixed modes:
 
 ```text
-H.264 / libx264
-CRF 23
-preset slow
-profile high
-level 4.1
-yuv420p
-30 fps
-GOP 60
-maxrate 3500k
-bufsize 7000k
-AAC 96k
-48000 Hz
-2 channels
-MP4 faststart
+Standard:
+H.264 / libx264, CRF 23, preset slow,
+profile high, level 4.1, yuv420p, 30 fps,
+GOP 60, maxrate 3500k, bufsize 7000k,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+High Motion:
+H.264 / libx264, CRF 21, preset slow,
+profile high, level 4.1, yuv420p, 30 fps,
+GOP 60, maxrate 5500k, bufsize 11000k,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 ```
 
 It does not support H.265, cloud upload, editing, watermarking, or advanced custom encoding parameters.

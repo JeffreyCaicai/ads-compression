@@ -1,6 +1,6 @@
 # 广告屏视频压缩工具
 
-这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式：H.264 CRF23 + AAC 96k，并保留源视频分辨率。
+这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式：H.264 + AAC 96k，并保留源视频分辨率。
 
 ## 如何启动
 
@@ -35,7 +35,23 @@ tools/ffmpeg/bin/ffprobe.exe
 - 点击“添加文件夹”可以导入文件夹里的视频。
 - 勾选“递归扫描子文件夹”后，会连同子文件夹里的视频一起导入。
 - 支持输入格式：`.mp4`, `.mov`, `.m4v`, `.avi`, `.mkv`。
-- 已经压缩过、文件名包含 `_h264_crf23_aac96` 的视频会自动跳过。
+- 已经压缩过、文件名包含 `_h264_crf23_aac96` 或 `_h264_crf21_highmotion_aac96` 的视频会自动跳过。
+
+## 画质模式
+
+界面提供两种 Quality Mode：
+
+```text
+Standard - General Compression
+CRF 23 / maxrate 3500k / bufsize 7000k
+适合普通广告，文件更小。
+
+High Motion - Better Motion Quality
+CRF 21 / maxrate 5500k / bufsize 11000k
+适合汽车、运动、快切、复杂背景等高运动素材，画质更稳，文件会更大。
+```
+
+默认使用 Standard。如果上屏发现车身轮廓、快速移动物体或复杂背景发糊，建议切换到 High Motion 后重新压缩。
 
 ## 输出文件在哪里
 
@@ -44,7 +60,8 @@ tools/ffmpeg/bin/ffprobe.exe
 输出文件名规则：
 
 ```text
-原文件名_h264_crf23_aac96.mp4
+Standard: 原文件名_h264_crf23_aac96.mp4
+High Motion: 原文件名_h264_crf21_highmotion_aac96.mp4
 ```
 
 如果输出文件已存在，且没有勾选“覆盖已存在输出文件”，程序会自动生成 `_2`, `_3` 这样的新文件名。
@@ -77,7 +94,7 @@ tools/ffmpeg/bin/ffprobe.exe
 compression_report_YYYYMMDD_HHMMSS.csv
 ```
 
-报告包含源文件、输出文件、状态、失败原因、压缩前后大小、节省比例、音频状态等信息。
+报告包含源文件、输出文件、状态、失败原因、压缩前后大小、节省比例、音频状态、encoding_mode、CRF、preset 等信息。
 
 ## 无音轨或疑似静音怎么办
 
@@ -108,25 +125,20 @@ tools/ffmpeg/bin/ffprobe.exe
 
 确认已经至少开始过一次任务，或手动选择一个存在的输出目录。
 
-## 固定压缩参数
+## 压缩参数
 
-本工具 V1.0 固定使用以下方案，不提供 H.265、云上传、剪辑、水印等功能：
+本工具不提供 H.265、云上传、剪辑、水印等功能。视频输出统一为 H.264 / AAC / MP4，并提供两个固定模式：
 
 ```text
-H.264 / libx264
-preset slow
-CRF 23
-profile high
-level 4.1
-yuv420p
-30 fps
-GOP 60
-maxrate 3500k
-bufsize 7000k
-AAC 96k
-48000 Hz
-双声道
-MP4 + faststart
+Standard:
+H.264 / libx264, preset slow, CRF 23,
+maxrate 3500k, bufsize 7000k,
+AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+
+High Motion:
+H.264 / libx264, preset slow, CRF 21,
+maxrate 5500k, bufsize 11000k,
+AAC 96k, 48000 Hz, 双声道, MP4 + faststart
 ```
 
 ## 打包 Windows 程序

@@ -380,7 +380,8 @@ compressed
 输出文件名规则：
 
 ```text
-原文件名_h264_crf23_aac96.mp4
+Standard: 原文件名_h264_crf23_aac96.mp4
+High Motion: 原文件名_h264_crf21_highmotion_aac96.mp4
 ```
 
 如果目标文件已存在，且未勾选“覆盖已存在输出文件”，程序会自动生成：
@@ -388,6 +389,8 @@ compressed
 ```text
 原文件名_h264_crf23_aac96_2.mp4
 原文件名_h264_crf23_aac96_3.mp4
+原文件名_h264_crf21_highmotion_aac96_2.mp4
+原文件名_h264_crf21_highmotion_aac96_3.mp4
 ```
 
 ## 13. 开始压缩
@@ -398,8 +401,11 @@ compressed
    - 递归扫描子文件夹；
    - 覆盖已存在输出文件；
    - 检测疑似静音音轨。
-4. 点击“开始压缩”。
-5. 等待进度条完成。
+4. 根据素材选择 Quality Mode：
+   - Standard：普通广告，文件更小；
+   - High Motion：汽车、运动、快切、复杂背景等素材，运动画面更清晰，文件更大。
+5. 点击“开始压缩”。
+6. 等待进度条完成。
 
 压缩过程中可以查看：
 
@@ -463,7 +469,7 @@ compressed
 compression_report_YYYYMMDD_HHMMSS.csv
 ```
 
-报告包含源文件路径、输出文件路径、处理状态、失败原因、时长、分辨率、压缩前后大小、节省比例、编码信息和音频状态。
+报告包含源文件路径、输出文件路径、处理状态、失败原因、时长、分辨率、压缩前后大小、节省比例、encoding_mode、编码信息和音频状态。
 
 ## 18. 常见问题
 
@@ -509,23 +515,20 @@ logs/app_YYYYMMDD.log
 
 ## 19. 固定压缩参数
 
-本工具固定使用：
+本工具提供两个固定模式：
 
 ```text
-H.264 / libx264
-CRF 23
-preset slow
-profile high
-level 4.1
-yuv420p
-30 fps
-GOP 60
-maxrate 3500k
-bufsize 7000k
-AAC 96k
-48000 Hz
-2 channels
-MP4 faststart
+Standard:
+H.264 / libx264, CRF 23, preset slow,
+profile high, level 4.1, yuv420p, 30 fps,
+GOP 60, maxrate 3500k, bufsize 7000k,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+High Motion:
+H.264 / libx264, CRF 21, preset slow,
+profile high, level 4.1, yuv420p, 30 fps,
+GOP 60, maxrate 5500k, bufsize 11000k,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 ```
 
 不支持 H.265、云上传、剪辑、水印或自定义复杂参数。

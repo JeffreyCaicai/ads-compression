@@ -11,36 +11,48 @@ from typing import Callable
 from ffmpeg_utils import FFmpegError, probe_video, startupinfo_for_windows, validate_output_file
 from models import CompressionResult, FFmpegPaths, VideoJob
 from settings import (
-    COMPRESSED_SUFFIX,
-    CRF,
+    DEFAULT_ENCODING_MODE,
     NO_AUDIO_MESSAGE,
-    PRESET,
     PROBE_ERROR_MESSAGE,
     STATUS_CANCELLED,
     STATUS_FAILED,
     STATUS_PROCESSING,
     STATUS_SUCCESS,
+    encoding_preset,
 )
 
 
 ProgressCallback = Callable[[VideoJob, float], None]
 
 
-def build_output_path(input_path: Path, output_dir: Path, overwrite: bool) -> Path:
-    base = f"{input_path.stem}{COMPRESSED_SUFFIX}.mp4"
+def build_output_path(
+    input_path: Path,
+    output_dir: Path,
+    overwrite: bool,
+    encoding_mode: str = DEFAULT_ENCODING_MODE,
+) -> Path:
+    suffix = encoding_preset(encoding_mode)["suffix"]
+    base = f"{input_path.stem}{suffix}.mp4"
     candidate = output_dir / base
     if overwrite or not candidate.exists():
         return candidate
     counter = 2
     while True:
-        candidate = output_dir / f"{input_path.stem}{COMPRESSED_SUFFIX}_{counter}.mp4"
+        candidate = output_dir / f"{input_path.stem}{suffix}_{counter}.mp4"
         if not candidate.exists():
             return candidate
         counter += 1
 
 
-def build_ffmpeg_args(ffmpeg_path: Path, input_path: Path, output_path: Path, overwrite: bool = True) -> list[str]:
+def build_ffmpeg_args(
+    ffmpeg_path: Path,
+    input_path: Path,
+    output_path: Path,
+    overwrite: bool = True,
+    encoding_mode: str = DEFAULT_ENCODING_MODE,
+) -> list[str]:
     overwrite_flag = "-y" if overwrite else "-y"
+    preset = encoding_preset(encoding_mode)
     return [
         str(ffmpeg_path),
         overwrite_flag,
@@ -54,9 +66,9 @@ def build_ffmpeg_args(ffmpeg_path: Path, input_path: Path, output_path: Path, ov
         "-c:v",
         "libx264",
         "-preset",
-        PRESET,
+        preset["preset"],
         "-crf",
-        CRF,
+        preset["crf"],
         "-profile:v",
         "high",
         "-level:v",
@@ -72,9 +84,9 @@ def build_ffmpeg_args(ffmpeg_path: Path, input_path: Path, output_path: Path, ov
         "-sc_threshold",
         "0",
         "-maxrate",
-        "3500k",
+        preset["maxrate"],
         "-bufsize",
-        "7000k",
+        preset["bufsize"],
         "-c:a",
         "aac",
         "-b:a",
@@ -123,7 +135,13 @@ class Encoder:
 
         job.status = STATUS_PROCESSING
         job.output_path.parent.mkdir(parents=True, exist_ok=True)
-        args = build_ffmpeg_args(self.paths.ffmpeg, job.input_path, job.output_path, overwrite=overwrite)
+        args = build_ffmpeg_args(
+            self.paths.ffmpeg,
+            job.input_path,
+            job.output_path,
+            overwrite=overwrite,
+            encoding_mode=job.encoding_mode,
+        )
         logging.info("Running ffmpeg: %s", args)
         stderr_tail: deque[str] = deque(maxlen=100)
 

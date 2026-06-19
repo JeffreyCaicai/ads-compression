@@ -25,6 +25,7 @@ class LocalizationTests(unittest.TestCase):
 
         self.assertEqual(localizer.t("status.success"), "Berhasil")
         self.assertEqual(localizer.t("button.start"), "Mulai Kompresi")
+        self.assertEqual(localizer.encoding_mode("high_motion"), "High Motion - Kualitas Gerak Lebih Baik")
 
     def test_supported_languages_have_display_names(self):
         self.assertEqual(set(SUPPORTED_LANGUAGES), {"zh_CN", "en_US", "id_ID"})

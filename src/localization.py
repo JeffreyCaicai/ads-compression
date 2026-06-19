@@ -27,6 +27,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "option.recursive": "递归扫描子文件夹",
         "option.overwrite": "覆盖已存在输出文件",
         "option.detect_silence": "检测疑似静音音轨",
+        "label.quality_mode": "画质模式",
+        "encoding_mode.standard": "Standard - 通用压缩",
+        "encoding_mode.high_motion": "High Motion - 运动画质优化",
         "column.name": "文件名",
         "column.resolution": "分辨率",
         "column.duration": "时长",
@@ -92,6 +95,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "option.recursive": "Scan Subfolders",
         "option.overwrite": "Overwrite Existing Output",
         "option.detect_silence": "Detect Probably Silent Audio",
+        "label.quality_mode": "Quality Mode",
+        "encoding_mode.standard": "Standard - General Compression",
+        "encoding_mode.high_motion": "High Motion - Better Motion Quality",
         "column.name": "File Name",
         "column.resolution": "Resolution",
         "column.duration": "Duration",
@@ -157,6 +163,9 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "option.recursive": "Pindai Subfolder",
         "option.overwrite": "Timpa Output yang Ada",
         "option.detect_silence": "Deteksi Audio Diduga Senyap",
+        "label.quality_mode": "Mode Kualitas",
+        "encoding_mode.standard": "Standard - Kompresi Umum",
+        "encoding_mode.high_motion": "High Motion - Kualitas Gerak Lebih Baik",
         "column.name": "Nama File",
         "column.resolution": "Resolusi",
         "column.duration": "Durasi",
@@ -254,3 +263,6 @@ class Localizer:
 
     def audio(self, audio_status: str) -> str:
         return self.t(f"audio.{audio_status}")
+
+    def encoding_mode(self, mode: str) -> str:
+        return self.t(f"encoding_mode.{mode}")

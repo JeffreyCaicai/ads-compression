@@ -26,7 +26,11 @@ from settings import (
     AUDIO_NORMAL,
     AUDIO_PROBABLY_SILENT,
     COMMON_SCREEN_RESOLUTIONS,
+    DEFAULT_ENCODING_MODE,
     DEFAULT_OUTPUT_FOLDER_NAME,
+    ENCODING_PRESETS,
+    MODE_HIGH_MOTION,
+    MODE_STANDARD,
     STATUS_CANCELLED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -54,9 +58,11 @@ class CompressorWindow(tk.Tk):
         self.cancel_event = threading.Event()
         self.worker_thread: threading.Thread | None = None
         self.report_path: Path | None = None
+        self.encoding_mode_code = DEFAULT_ENCODING_MODE
 
         self.output_dir_var = tk.StringVar()
         self.language_var = tk.StringVar()
+        self.encoding_mode_var = tk.StringVar()
         self.recursive_var = tk.BooleanVar(value=False)
         self.overwrite_var = tk.BooleanVar(value=False)
         self.detect_silence_var = tk.BooleanVar(value=True)
@@ -104,6 +110,11 @@ class CompressorWindow(tk.Tk):
 
         options = ttk.Frame(outer)
         options.pack(fill=tk.X, pady=(0, 8))
+        self.quality_mode_label = ttk.Label(options)
+        self.quality_mode_label.pack(side=tk.LEFT, padx=(0, 8))
+        self.quality_mode_combo = ttk.Combobox(options, state="readonly", width=34)
+        self.quality_mode_combo.pack(side=tk.LEFT, padx=(0, 18))
+        self.quality_mode_combo.bind("<<ComboboxSelected>>", self._on_quality_mode_selected)
         self.recursive_check = ttk.Checkbutton(options, variable=self.recursive_var)
         self.overwrite_check = ttk.Checkbutton(options, variable=self.overwrite_var)
         self.silence_check = ttk.Checkbutton(options, variable=self.detect_silence_var)
@@ -186,15 +197,21 @@ class CompressorWindow(tk.Tk):
             normalized = path.resolve()
             if normalized.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 continue
-            if "_h264_crf23_aac96" in normalized.stem:
+            if any(preset["suffix"] in normalized.stem for preset in ENCODING_PRESETS.values()):
                 continue
             if normalized in self.jobs_by_path:
                 continue
             output_dir = self._effective_output_dir(normalized)
             job = VideoJob(
                 input_path=normalized,
-                output_path=build_output_path(normalized, output_dir, self.overwrite_var.get()),
+                output_path=build_output_path(
+                    normalized,
+                    output_dir,
+                    self.overwrite_var.get(),
+                    encoding_mode=self.encoding_mode_code,
+                ),
                 original_size_bytes=normalized.stat().st_size if normalized.exists() else 0,
+                encoding_mode=self.encoding_mode_code,
             )
             self.jobs_by_path[normalized] = job
             item = self.tree.insert("", tk.END, values=self._row_values(job))
@@ -252,7 +269,13 @@ class CompressorWindow(tk.Tk):
 
         jobs = list(self.jobs_by_path.values())
         for job in jobs:
-            job.output_path = build_output_path(job.input_path, output_dir, self.overwrite_var.get())
+            job.encoding_mode = self.encoding_mode_code
+            job.output_path = build_output_path(
+                job.input_path,
+                output_dir,
+                self.overwrite_var.get(),
+                encoding_mode=job.encoding_mode,
+            )
             job.status = STATUS_PENDING
             job.error_message = ""
             job.output_size_bytes = 0
@@ -449,6 +472,7 @@ class CompressorWindow(tk.Tk):
             self.recursive_check,
             self.overwrite_check,
             self.silence_check,
+            self.quality_mode_combo,
             self.start_btn,
         ]:
             widget.configure(state=state)
@@ -525,6 +549,22 @@ class CompressorWindow(tk.Tk):
         for job in self.jobs_by_path.values():
             self._refresh_job(job)
 
+    def _on_quality_mode_selected(self, _event: object | None = None) -> None:
+        selected = self.encoding_mode_var.get()
+        for mode in (MODE_STANDARD, MODE_HIGH_MOTION):
+            if selected == self.localizer.encoding_mode(mode):
+                self.encoding_mode_code = mode
+                break
+        for job in self.jobs_by_path.values():
+            if job.status == STATUS_PENDING:
+                job.encoding_mode = self.encoding_mode_code
+                job.output_path = build_output_path(
+                    job.input_path,
+                    self._effective_output_dir(job.input_path),
+                    self.overwrite_var.get(),
+                    encoding_mode=job.encoding_mode,
+                )
+
     def _apply_language(self) -> None:
         t = self.localizer.t
         self.title(t("app.title"))
@@ -539,6 +579,11 @@ class CompressorWindow(tk.Tk):
         self.language_combo.configure(textvariable=self.language_var)
         self.output_label.configure(text=t("label.output_dir"))
         self.browse_output_btn.configure(text=t("button.browse"))
+        self.quality_mode_label.configure(text=t("label.quality_mode"))
+        quality_values = [self.localizer.encoding_mode(mode) for mode in (MODE_STANDARD, MODE_HIGH_MOTION)]
+        self.quality_mode_combo.configure(values=quality_values)
+        self.encoding_mode_var.set(self.localizer.encoding_mode(self.encoding_mode_code))
+        self.quality_mode_combo.configure(textvariable=self.encoding_mode_var)
         self.recursive_check.configure(text=t("option.recursive"))
         self.overwrite_check.configure(text=t("option.overwrite"))
         self.silence_check.configure(text=t("option.detect_silence"))

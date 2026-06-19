@@ -9,6 +9,7 @@ WINDOW_SIZE = "1180x760"
 
 SUPPORTED_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
 COMPRESSED_SUFFIX = "_h264_crf23_aac96"
+HIGH_MOTION_SUFFIX = "_h264_crf21_highmotion_aac96"
 DEFAULT_OUTPUT_FOLDER_NAME = "compressed"
 
 CRF = "23"
@@ -22,6 +23,32 @@ SILENCE_MAX_VOLUME_DB = -55.0
 DURATION_TOLERANCE_SEC = 0.5
 
 COMMON_SCREEN_RESOLUTIONS = {(1920, 1080), (1080, 1920), (1920, 360)}
+
+MODE_STANDARD = "standard"
+MODE_HIGH_MOTION = "high_motion"
+DEFAULT_ENCODING_MODE = MODE_STANDARD
+SUPPORTED_ENCODING_MODES = (MODE_STANDARD, MODE_HIGH_MOTION)
+
+ENCODING_PRESETS = {
+    MODE_STANDARD: {
+        "suffix": COMPRESSED_SUFFIX,
+        "crf": "23",
+        "preset": "slow",
+        "maxrate": "3500k",
+        "bufsize": "7000k",
+    },
+    MODE_HIGH_MOTION: {
+        "suffix": HIGH_MOTION_SUFFIX,
+        "crf": "21",
+        "preset": "slow",
+        "maxrate": "5500k",
+        "bufsize": "11000k",
+    },
+}
+
+
+def encoding_preset(mode: str) -> dict[str, str]:
+    return ENCODING_PRESETS.get(mode, ENCODING_PRESETS[DEFAULT_ENCODING_MODE])
 
 STATUS_PENDING = "pending"
 STATUS_PROBING = "probing"

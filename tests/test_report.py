@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from models import CompressionResult, VideoInfo, VideoJob
 from report import REPORT_FIELDS, write_report
+from settings import MODE_HIGH_MOTION
 
 
 class ReportTests(unittest.TestCase):
@@ -36,6 +37,7 @@ class ReportTests(unittest.TestCase):
                 status="success",
                 original_size_bytes=10_000_000,
                 output_size_bytes=5_000_000,
+                encoding_mode=MODE_HIGH_MOTION,
             )
             result = CompressionResult(
                 job=job,
@@ -58,7 +60,8 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["size_reduction_percent"], "50.0")
         self.assertEqual(rows[0]["output_video_codec"], "h264")
         self.assertEqual(rows[0]["output_audio_codec"], "aac")
-        self.assertEqual(rows[0]["crf"], "23")
+        self.assertEqual(rows[0]["encoding_mode"], "high_motion")
+        self.assertEqual(rows[0]["crf"], "21")
         self.assertEqual(rows[0]["preset"], "slow")
 
 

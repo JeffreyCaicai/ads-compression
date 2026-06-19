@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from models import CompressionResult, VideoInfo, VideoJob
-from settings import CRF, PRESET
+from settings import encoding_preset
 
 
 REPORT_FIELDS = [
@@ -23,6 +23,7 @@ REPORT_FIELDS = [
     "source_audio_codec",
     "output_audio_codec",
     "audio_status",
+    "encoding_mode",
     "crf",
     "preset",
     "created_at",
@@ -43,6 +44,7 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
     job = result.job
     source_info = job.info
     output_info = result.output_info
+    preset = encoding_preset(job.encoding_mode)
     return {
         "source_file": str(job.input_path),
         "output_file": str(job.output_path),
@@ -58,8 +60,9 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
         "source_audio_codec": source_info.audio_codec if source_info and source_info.audio_codec else job.source_audio_codec,
         "output_audio_codec": output_info.audio_codec if output_info and output_info.audio_codec else "",
         "audio_status": job.audio_status,
-        "crf": CRF,
-        "preset": PRESET,
+        "encoding_mode": job.encoding_mode,
+        "crf": preset["crf"],
+        "preset": preset["preset"],
         "created_at": result.created_at or datetime.now().isoformat(timespec="seconds"),
     }
 
