@@ -1,11 +1,13 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ffmpeg_utils import parse_ffprobe_json, parse_fraction
+from ffmpeg_utils import candidate_roots, find_ffmpeg_paths, parse_ffprobe_json, parse_fraction
 
 
 class FFprobeParseTests(unittest.TestCase):
@@ -68,6 +70,30 @@ class FFprobeParseTests(unittest.TestCase):
         self.assertIs(info.has_audio, False)
         self.assertIsNone(info.audio_codec)
         self.assertEqual(info.duration_sec, 3.5)
+
+    def test_find_ffmpeg_paths_supports_pyinstaller_internal_data_dir(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            app_dir = (Path(temp_dir) / "SignageVideoCompressor").resolve()
+            bin_dir = app_dir / "_internal" / "tools" / "ffmpeg" / "bin"
+            bin_dir.mkdir(parents=True)
+            ffmpeg = bin_dir / "ffmpeg"
+            ffprobe = bin_dir / "ffprobe"
+            ffmpeg.write_text("", encoding="utf-8")
+            ffprobe.write_text("", encoding="utf-8")
+
+            with (
+                patch("ffmpeg_utils.sys.executable", str(app_dir / "SignageVideoCompressor.exe")),
+                patch("ffmpeg_utils.sys.frozen", True, create=True),
+                patch("ffmpeg_utils.Path.cwd", return_value=Path(temp_dir) / "elsewhere"),
+                patch("ffmpeg_utils.shutil.which", return_value=None),
+            ):
+                roots = candidate_roots()
+                paths = find_ffmpeg_paths()
+
+        self.assertIn(app_dir / "_internal", roots)
+        self.assertIsNotNone(paths)
+        self.assertEqual(paths.ffmpeg, ffmpeg)
+        self.assertEqual(paths.ffprobe, ffprobe)
 
 
 if __name__ == "__main__":

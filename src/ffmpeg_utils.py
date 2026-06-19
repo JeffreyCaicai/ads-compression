@@ -37,9 +37,16 @@ def runtime_root() -> Path:
 def candidate_roots() -> list[Path]:
     root = runtime_root()
     cwd = Path.cwd()
-    candidates = [cwd, root]
-    if root.parent not in candidates:
-        candidates.append(root.parent)
+    candidates: list[Path] = []
+    for candidate in [
+        cwd,
+        root,
+        root / "_internal",
+        Path(getattr(sys, "_MEIPASS", root)),
+        root.parent,
+    ]:
+        if candidate not in candidates:
+            candidates.append(candidate)
     return candidates
 
 
