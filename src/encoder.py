@@ -31,15 +31,15 @@ def build_output_path(
     overwrite: bool,
     encoding_mode: str = DEFAULT_ENCODING_MODE,
 ) -> Path:
-    suffix = encoding_preset(encoding_mode)["suffix"]
-    base = f"{input_path.stem}{suffix}.mp4"
+    base = f"{input_path.stem}.mp4"
     candidate = output_dir / base
-    if overwrite or not candidate.exists():
+    source_path = input_path.resolve()
+    if candidate.resolve() != source_path and (overwrite or not candidate.exists()):
         return candidate
     counter = 2
     while True:
-        candidate = output_dir / f"{input_path.stem}{suffix}_{counter}.mp4"
-        if not candidate.exists():
+        candidate = output_dir / f"{input_path.stem}_{counter}.mp4"
+        if candidate.resolve() != source_path and not candidate.exists():
             return candidate
         counter += 1
 

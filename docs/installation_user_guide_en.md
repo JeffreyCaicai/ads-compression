@@ -380,18 +380,21 @@ Users can also click “Browse” and choose another output folder.
 Output filename rule:
 
 ```text
-Standard: original_filename_h264_crf23_aac96.mp4
-High Motion: original_filename_h264_crf21_highmotion_aac96.mp4
+Input: Car Ad.mp4
+Output: Car Ad.mp4
+
+Input: Car Ad.mov
+Output: Car Ad.mp4
 ```
 
 If the target file already exists and “Overwrite Existing Output” is not enabled, the app creates a numbered filename:
 
 ```text
-original_filename_h264_crf23_aac96_2.mp4
-original_filename_h264_crf23_aac96_3.mp4
-original_filename_h264_crf21_highmotion_aac96_2.mp4
-original_filename_h264_crf21_highmotion_aac96_3.mp4
+Car Ad_2.mp4
+Car Ad_3.mp4
 ```
+
+If the output folder is the same as the source folder and the source file is already MP4, the app also uses `_2` automatically to avoid overwriting the source file.
 
 ## 13. Start Compression
 

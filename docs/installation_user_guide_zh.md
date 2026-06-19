@@ -380,18 +380,21 @@ compressed
 输出文件名规则：
 
 ```text
-Standard: 原文件名_h264_crf23_aac96.mp4
-High Motion: 原文件名_h264_crf21_highmotion_aac96.mp4
+输入：Car Ad.mp4
+输出：Car Ad.mp4
+
+输入：Car Ad.mov
+输出：Car Ad.mp4
 ```
 
 如果目标文件已存在，且未勾选“覆盖已存在输出文件”，程序会自动生成：
 
 ```text
-原文件名_h264_crf23_aac96_2.mp4
-原文件名_h264_crf23_aac96_3.mp4
-原文件名_h264_crf21_highmotion_aac96_2.mp4
-原文件名_h264_crf21_highmotion_aac96_3.mp4
+Car Ad_2.mp4
+Car Ad_3.mp4
 ```
+
+如果输出目录与源文件目录相同，并且源文件本身是 MP4，程序也会自动使用 `_2`，避免覆盖源文件。
 
 ## 13. 开始压缩
 

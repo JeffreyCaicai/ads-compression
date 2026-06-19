@@ -81,14 +81,14 @@ AAC 96k, 48000Hz, stereo, MP4 faststart
 
 Standard 为默认模式，保持原有文件体积优势。High Motion 用于汽车、运动、快切、复杂背景等高运动素材，减少快速运动画面中的轮廓发糊和细节损失。
 
-输出文件名按模式区分：
+输出文件名默认保持原文件名，只把输出容器统一为 `.mp4`：
 
 ```text
-Standard: 原文件名_h264_crf23_aac96.mp4
-High Motion: 原文件名_h264_crf21_highmotion_aac96.mp4
+输入：Car Ad.mp4 -> 输出：Car Ad.mp4
+输入：Car Ad.mov -> 输出：Car Ad.mp4
 ```
 
-CSV 报告新增 `encoding_mode` 字段，并根据模式记录对应 `crf` 和 `preset`。
+如目标文件已存在且未启用覆盖，输出自动使用 `_2`、`_3` 递增命名。若输出目录与源文件目录相同，并且源文件本身是 MP4，程序永远不会直接覆盖源文件，而是输出 `_2.mp4`。CSV 报告使用 `encoding_mode` 字段区分 Standard / High Motion，并根据模式记录对应 `crf` 和 `preset`。
 
 所有 subprocess 调用必须使用 list 参数，支持中文路径、英文路径、印尼语文件名、空格路径和长文件名。
 

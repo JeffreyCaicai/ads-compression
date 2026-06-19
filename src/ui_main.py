@@ -197,6 +197,8 @@ class CompressorWindow(tk.Tk):
             normalized = path.resolve()
             if normalized.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 continue
+            if any(parent.name.lower() == DEFAULT_OUTPUT_FOLDER_NAME for parent in normalized.parents):
+                continue
             if any(preset["suffix"] in normalized.stem for preset in ENCODING_PRESETS.values()):
                 continue
             if normalized in self.jobs_by_path:
