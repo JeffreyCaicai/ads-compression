@@ -22,13 +22,71 @@ TARGET_PIX_FMT = "yuv420p"
 SILENCE_MAX_VOLUME_DB = -55.0
 DURATION_TOLERANCE_SEC = 0.5
 
-COMMON_SCREEN_RESOLUTIONS = {(1920, 1080), (1080, 1920), (1920, 360)}
+COMMON_SCREEN_RESOLUTIONS = {
+    (1920, 1080),
+    (1080, 1920),
+    (1920, 1440),
+    (1080, 2560),
+    (1920, 360),
+}
 
 MODE_STANDARD = "standard"
 MODE_HIGH_MOTION = "high_motion"
 MODE_SCREEN_SAFE_HIGH_MOTION = "screen_safe_high_motion"
+MODE_H265_SMALL_FILE_SIMPLE = "h265_small_file_simple"
+MODE_H265_SMALL_FILE = "h265_small_file"
+MODE_H265_SMALL_FILE_COMPLEX = "h265_small_file_complex"
+MODE_H265_SMART_AUTO = "h265_smart_auto"
 DEFAULT_ENCODING_MODE = MODE_STANDARD
-SUPPORTED_ENCODING_MODES = (MODE_STANDARD, MODE_HIGH_MOTION, MODE_SCREEN_SAFE_HIGH_MOTION)
+H265_ENCODING_MODES = (
+    MODE_H265_SMALL_FILE_SIMPLE,
+    MODE_H265_SMALL_FILE,
+    MODE_H265_SMALL_FILE_COMPLEX,
+    MODE_H265_SMART_AUTO,
+)
+SUPPORTED_ENCODING_MODES = (
+    MODE_STANDARD,
+    MODE_HIGH_MOTION,
+    MODE_SCREEN_SAFE_HIGH_MOTION,
+    MODE_H265_SMART_AUTO,
+    MODE_H265_SMALL_FILE,
+    MODE_H265_SMALL_FILE_COMPLEX,
+    MODE_H265_SMALL_FILE_SIMPLE,
+)
+
+CONTENT_SIMPLE = "simple"
+CONTENT_STANDARD = "standard"
+CONTENT_COMPLEX = "complex"
+
+H265_TARGET_FPS = 25.0
+H265_GOP = "250"
+H265_KEYINT_MIN = "25"
+H265_SC_THRESHOLD = "40"
+
+H265_COMPLEXITY_BY_MODE = {
+    MODE_H265_SMALL_FILE_SIMPLE: CONTENT_SIMPLE,
+    MODE_H265_SMALL_FILE: CONTENT_STANDARD,
+    MODE_H265_SMALL_FILE_COMPLEX: CONTENT_COMPLEX,
+    MODE_H265_SMART_AUTO: CONTENT_STANDARD,
+}
+
+H265_TARGET_BITRATES_KBPS = {
+    "full_hd_landscape": {
+        CONTENT_SIMPLE: 450,
+        CONTENT_STANDARD: 800,
+        CONTENT_COMPLEX: 1200,
+    },
+    "full_hd_portrait": {
+        CONTENT_SIMPLE: 500,
+        CONTENT_STANDARD: 1300,
+        CONTENT_COMPLEX: 1800,
+    },
+    "high_pixel": {
+        CONTENT_SIMPLE: 600,
+        CONTENT_STANDARD: 1400,
+        CONTENT_COMPLEX: 2200,
+    },
+}
 
 ENCODING_PRESETS = {
     MODE_STANDARD: {
@@ -70,11 +128,80 @@ ENCODING_PRESETS = {
         "bf": "0",
         "refs": "2",
     },
+    MODE_H265_SMALL_FILE_SIMPLE: {
+        "suffix": "_h265_smallfile_simple_aac96",
+        "crf": "",
+        "preset": "slow",
+        "profile": "main",
+        "codec": "libx265",
+        "fps": "25",
+        "rate_control": "target_bitrate",
+    },
+    MODE_H265_SMALL_FILE: {
+        "suffix": "_h265_smallfile_aac96",
+        "crf": "",
+        "preset": "slow",
+        "profile": "main",
+        "codec": "libx265",
+        "fps": "25",
+        "rate_control": "target_bitrate",
+    },
+    MODE_H265_SMALL_FILE_COMPLEX: {
+        "suffix": "_h265_smallfile_complex_aac96",
+        "crf": "",
+        "preset": "slow",
+        "profile": "main",
+        "codec": "libx265",
+        "fps": "25",
+        "rate_control": "target_bitrate",
+    },
+    MODE_H265_SMART_AUTO: {
+        "suffix": "_h265_smart_auto_aac96",
+        "crf": "",
+        "preset": "slow",
+        "profile": "main",
+        "codec": "libx265",
+        "fps": "25",
+        "rate_control": "smart_target_bitrate",
+    },
 }
 
 
 def encoding_preset(mode: str) -> dict[str, str]:
     return ENCODING_PRESETS.get(mode, ENCODING_PRESETS[DEFAULT_ENCODING_MODE])
+
+
+def is_h265_mode(mode: str) -> bool:
+    return mode in H265_ENCODING_MODES
+
+
+def is_h265_smart_auto_mode(mode: str) -> bool:
+    return mode == MODE_H265_SMART_AUTO
+
+
+def target_fps_for_mode(mode: str) -> float:
+    return H265_TARGET_FPS if is_h265_mode(mode) else TARGET_FPS
+
+
+def h265_screen_class(width: int, height: int) -> str:
+    pixels = width * height
+    if pixels >= 2_500_000:
+        return "high_pixel"
+    if height > width:
+        return "full_hd_portrait"
+    return "full_hd_landscape"
+
+
+def h265_content_complexity(mode: str) -> str:
+    return H265_COMPLEXITY_BY_MODE.get(mode, CONTENT_STANDARD)
+
+
+def target_video_bitrate_kbps(width: int, height: int, mode: str, complexity: str | None = None) -> int:
+    screen_class = h265_screen_class(width, height)
+    selected_complexity = complexity or h265_content_complexity(mode)
+    if selected_complexity not in H265_TARGET_BITRATES_KBPS[screen_class]:
+        selected_complexity = CONTENT_STANDARD
+    return H265_TARGET_BITRATES_KBPS[screen_class][selected_complexity]
 
 STATUS_PENDING = "pending"
 STATUS_PROBING = "probing"

@@ -1,0 +1,65 @@
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from ffmpeg_utils import validate_output_file
+from models import VideoInfo
+from settings import (
+    COMMON_SCREEN_RESOLUTIONS,
+    MODE_H265_SMALL_FILE,
+    MODE_H265_SMALL_FILE_COMPLEX,
+    MODE_H265_SMALL_FILE_SIMPLE,
+    target_video_bitrate_kbps,
+)
+
+
+class EncodingTargetTests(unittest.TestCase):
+    def test_h265_target_bitrate_uses_screen_size_and_content_complexity(self):
+        self.assertEqual(target_video_bitrate_kbps(1920, 1080, MODE_H265_SMALL_FILE_SIMPLE), 450)
+        self.assertEqual(target_video_bitrate_kbps(1080, 1920, MODE_H265_SMALL_FILE), 1300)
+        self.assertEqual(target_video_bitrate_kbps(1080, 2560, MODE_H265_SMALL_FILE_COMPLEX), 2200)
+
+    def test_h265_output_validation_accepts_hevc_25fps_outputs(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "output.mp4"
+            output_path.write_bytes(b"video")
+            source_info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+            )
+            output_info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+            )
+
+            errors = validate_output_file(output_path, source_info, output_info, encoding_mode=MODE_H265_SMALL_FILE)
+
+        self.assertEqual(errors, [])
+
+    def test_current_company_screen_resolutions_are_common(self):
+        self.assertIn((1920, 1440), COMMON_SCREEN_RESOLUTIONS)
+        self.assertIn((1080, 2560), COMMON_SCREEN_RESOLUTIONS)
+
+
+if __name__ == "__main__":
+    unittest.main()

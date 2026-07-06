@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Callable
 
 from ffmpeg_utils import FFmpegError, probe_video, startupinfo_for_windows, validate_output_file
-from models import CompressionResult, FFmpegPaths, VideoJob
+from models import CompressionResult, FFmpegPaths, VideoInfo, VideoJob
 from settings import (
     DEFAULT_ENCODING_MODE,
+    H265_GOP,
+    H265_KEYINT_MIN,
+    H265_SC_THRESHOLD,
     NO_AUDIO_MESSAGE,
     PROBE_ERROR_MESSAGE,
     STATUS_CANCELLED,
@@ -19,6 +22,8 @@ from settings import (
     STATUS_PROCESSING,
     STATUS_SUCCESS,
     encoding_preset,
+    is_h265_mode,
+    target_video_bitrate_kbps,
 )
 
 
@@ -50,6 +55,8 @@ def build_ffmpeg_args(
     output_path: Path,
     overwrite: bool = True,
     encoding_mode: str = DEFAULT_ENCODING_MODE,
+    source_info: VideoInfo | None = None,
+    target_video_bitrate_kbps: int | None = None,
 ) -> list[str]:
     overwrite_flag = "-y" if overwrite else "-y"
     preset = encoding_preset(encoding_mode)
@@ -63,6 +70,34 @@ def build_ffmpeg_args(
         "0:v:0",
         "-map",
         "0:a:0?",
+    ]
+    if is_h265_mode(encoding_mode):
+        args.extend(_h265_video_args(preset, encoding_mode, source_info, target_video_bitrate_kbps))
+    else:
+        args.extend(_h264_video_args(preset))
+    args.extend(
+        [
+            "-c:a",
+            "aac",
+            "-b:a",
+            "96k",
+            "-ar",
+            "48000",
+            "-ac",
+            "2",
+            "-movflags",
+            "+faststart",
+            "-progress",
+            "pipe:1",
+            "-nostats",
+            str(output_path),
+        ]
+    )
+    return args
+
+
+def _h264_video_args(preset: dict[str, str]) -> list[str]:
+    args = [
         "-c:v",
         "libx264",
         "-preset",
@@ -94,25 +129,47 @@ def build_ffmpeg_args(
         args.extend(["-bf", preset["bf"]])
     if preset.get("refs"):
         args.extend(["-refs", preset["refs"]])
-    args.extend(
-        [
-            "-c:a",
-            "aac",
-            "-b:a",
-            "96k",
-            "-ar",
-            "48000",
-            "-ac",
-            "2",
-            "-movflags",
-            "+faststart",
-            "-progress",
-            "pipe:1",
-            "-nostats",
-            str(output_path),
-        ]
-    )
     return args
+
+
+def _h265_video_args(
+    preset: dict[str, str],
+    encoding_mode: str,
+    source_info: VideoInfo | None,
+    target_video_bitrate_kbps_override: int | None,
+) -> list[str]:
+    width = source_info.width if source_info else 1920
+    height = source_info.height if source_info else 1080
+    target_kbps = target_video_bitrate_kbps_override or target_video_bitrate_kbps(width, height, encoding_mode)
+    maxrate_kbps = round(target_kbps * 1.5)
+    bufsize_kbps = target_kbps * 3
+    x265_params = (
+        f"keyint={H265_GOP}:"
+        f"min-keyint={H265_KEYINT_MIN}:"
+        f"scenecut={H265_SC_THRESHOLD}"
+    )
+    return [
+        "-c:v",
+        "libx265",
+        "-preset",
+        preset["preset"],
+        "-profile:v",
+        preset["profile"],
+        "-tag:v",
+        "hvc1",
+        "-pix_fmt",
+        "yuv420p",
+        "-r",
+        preset["fps"],
+        "-b:v",
+        f"{target_kbps}k",
+        "-maxrate",
+        f"{maxrate_kbps}k",
+        "-bufsize",
+        f"{bufsize_kbps}k",
+        "-x265-params",
+        x265_params,
+    ]
 
 
 class Encoder:
@@ -152,6 +209,8 @@ class Encoder:
             job.output_path,
             overwrite=overwrite,
             encoding_mode=job.encoding_mode,
+            source_info=job.info,
+            target_video_bitrate_kbps=job.target_video_bitrate_kbps,
         )
         logging.info("Running ffmpeg: %s", args)
         stderr_tail: deque[str] = deque(maxlen=100)
@@ -219,7 +278,12 @@ class Encoder:
         job.output_size_bytes = job.output_path.stat().st_size if job.output_path.exists() else 0
         try:
             output_info = probe_video(self.paths.ffprobe, job.output_path)
-            validation_errors = validate_output_file(job.output_path, job.info, output_info)
+            validation_errors = validate_output_file(
+                job.output_path,
+                job.info,
+                output_info,
+                encoding_mode=job.encoding_mode,
+            )
         except FFmpegError as exc:
             return self._fail(job, f"输出验证失败：{exc}", stderr_tail=list(stderr_tail))
 

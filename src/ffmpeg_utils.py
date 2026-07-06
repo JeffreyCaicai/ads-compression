@@ -13,10 +13,12 @@ from models import FFmpegPaths, VideoInfo
 from settings import (
     AUDIO_CHANNELS,
     AUDIO_SAMPLE_RATE,
+    DEFAULT_ENCODING_MODE,
     DURATION_TOLERANCE_SEC,
     FFMPEG_NOT_FOUND_MESSAGE,
-    TARGET_FPS,
     TARGET_PIX_FMT,
+    is_h265_mode,
+    target_fps_for_mode,
 )
 
 
@@ -173,18 +175,28 @@ def probe_video(ffprobe_path: Path, input_path: Path) -> VideoInfo:
     return parse_ffprobe_json(payload)
 
 
-def validate_output_file(output_path: Path, source_info: VideoInfo, output_info: VideoInfo) -> list[str]:
+def validate_output_file(
+    output_path: Path,
+    source_info: VideoInfo,
+    output_info: VideoInfo,
+    encoding_mode: str = DEFAULT_ENCODING_MODE,
+) -> list[str]:
     errors: list[str] = []
     if not output_path.exists() or output_path.stat().st_size <= 0:
         errors.append("输出文件不存在或大小为 0。")
-    if output_info.video_codec.lower() != "h264":
+    video_codec = output_info.video_codec.lower()
+    if is_h265_mode(encoding_mode):
+        if video_codec not in {"hevc", "h265"}:
+            errors.append(f"输出视频编码不是 hevc/h265：{output_info.video_codec}")
+    elif video_codec != "h264":
         errors.append(f"输出视频编码不是 h264：{output_info.video_codec}")
     if output_info.pix_fmt != TARGET_PIX_FMT:
         errors.append(f"输出像素格式不是 {TARGET_PIX_FMT}：{output_info.pix_fmt}")
     if (output_info.width, output_info.height) != (source_info.width, source_info.height):
         errors.append("输出分辨率与源文件不一致。")
-    if abs(output_info.fps - TARGET_FPS) > 0.5:
-        errors.append(f"输出帧率不是约 30fps：{output_info.fps:.3f}")
+    target_fps = target_fps_for_mode(encoding_mode)
+    if abs(output_info.fps - target_fps) > 0.5:
+        errors.append(f"输出帧率不是约 {target_fps:g}fps：{output_info.fps:.3f}")
     if output_info.audio_codec != "aac":
         errors.append(f"输出音频编码不是 aac：{output_info.audio_codec}")
     if output_info.audio_sample_rate != AUDIO_SAMPLE_RATE:

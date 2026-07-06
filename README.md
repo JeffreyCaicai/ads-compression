@@ -1,6 +1,6 @@
 # 广告屏视频压缩工具
 
-这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式：H.264 + AAC 96k，并保留源视频分辨率。
+这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式，并保留源视频分辨率。默认输出仍为 H.264 + AAC 96k；支持 H.265 Small File 和 H.265 Smart Auto 模式，用于已确认支持 H.265 的新屏降低传输成本。
 
 ## 如何启动
 
@@ -40,23 +40,39 @@ tools/ffmpeg/bin/ffprobe.exe
 
 ## 画质模式
 
-界面提供三种 Quality Mode：
+界面提供七种 Quality Mode：
 
 ```text
 Standard - General Compression
 CRF 23 / maxrate 3500k / bufsize 7000k
-适合普通广告，文件更小。
+H.264，适合普通广告，兼容性高。
 
 High Motion - Better Motion Quality
 CRF 21 / maxrate 5500k / bufsize 11000k
-适合汽车、运动、快切、复杂背景等高运动素材，画质更稳，文件会更大。
+H.264，适合汽车、运动、快切、复杂背景等高运动素材，画质更稳，文件会更大。
 
 Screen Safe - High Motion
 CRF 21 / maxrate 6500k / bufsize 12000k / GOP 30 / fastdecode
-适合电脑播放正常、但广告屏开头约 1 秒出现花屏或块状异常的高运动素材。文件会更大，优先保证屏端解码稳定。
+H.264，适合电脑播放正常、但广告屏开头约 1 秒出现花屏或块状异常的高运动素材。文件会更大，优先保证老屏或弱解码屏稳定。
+
+H.265 Smart Auto - Analyze Content
+H.265 / 25fps / 先快速抽样分析画面复杂度，再自动选择目标码率
+适合大多数已确认支持 H.265 的新屏，是优先推荐的小文件模式。
+
+H.265 Small File - Standard Content
+H.265 / 25fps / 按屏幕尺寸自动选择目标码率
+适合已知属于普通复杂度的素材。
+
+H.265 Small File - Complex Motion
+H.265 / 25fps / 更高目标码率
+适合汽车、运动、快切、复杂背景等高运动素材。
+
+H.265 Small File - Simple/Static
+H.265 / 25fps / 更低目标码率
+适合静态画面、简单背景、文字或低运动素材。
 ```
 
-默认使用 Standard。如果上屏发现车身轮廓、快速移动物体或复杂背景发糊，建议切换到 High Motion 后重新压缩。如果电脑播放正常但广告屏开头出现花屏、残块或局部错位，建议使用 Screen Safe - High Motion。
+默认使用 Standard，保留 H.264 兼容行为。新屏建议优先使用 H.265 Smart Auto - Analyze Content；程序会自动判断素材复杂度并选择 Simple / Standard / Complex 目标码率。如果需要人工指定复杂度，可以使用三个 H.265 Small File 手动模式。75 块只支持 H.264 的老屏继续使用 Standard / High Motion / Screen Safe。
 
 ## 输出文件在哪里
 
@@ -86,13 +102,15 @@ CRF 21 / maxrate 6500k / bufsize 12000k / GOP 30 / fastdecode
 
 ## 如何判断成功
 
-表格中状态显示“成功”代表该文件已压缩完成，并且通过了输出验证。程序会检查：
+表格中状态显示“成功”代表该文件已压缩完成，并且通过了输出验证。程序会按所选模式检查：
 
 - 输出文件存在且大小大于 0；
-- 视频编码为 H.264；
+- H.264 模式下视频编码为 H.264；
+- H.265 Small File / Smart Auto 模式下视频编码为 HEVC/H.265；
 - 像素格式为 yuv420p；
 - 分辨率与源文件一致；
-- 帧率约为 30fps；
+- H.264 模式帧率约为 30fps；
+- H.265 Small File / Smart Auto 模式帧率约为 25fps；
 - 音频为 AAC / 48000Hz / 双声道；
 - 输出时长与源文件差异不超过 0.5 秒。
 
@@ -102,7 +120,7 @@ CRF 21 / maxrate 6500k / bufsize 12000k / GOP 30 / fastdecode
 compression_report_YYYYMMDD_HHMMSS.csv
 ```
 
-报告包含源文件、输出文件、状态、失败原因、压缩前后大小、节省比例、音频状态、encoding_mode、CRF、preset 等信息。
+报告包含源文件、输出文件、状态、失败原因、压缩前后大小、节省比例、音频状态、encoding_mode、CRF、preset、target_video_bitrate_kbps、target_fps、content_complexity、content_complexity_score 等信息。
 
 ## 无音轨或疑似静音怎么办
 
@@ -135,7 +153,7 @@ tools/ffmpeg/bin/ffprobe.exe
 
 ## 压缩参数
 
-本工具不提供 H.265、云上传、剪辑、水印等功能。视频输出统一为 H.264 / AAC / MP4，并提供三个固定模式：
+本工具不提供云上传、剪辑、水印等功能。视频输出统一为 MP4 + AAC 96k，并提供 H.264 兼容模式和 H.265 小文件模式：
 
 ```text
 Standard:
@@ -153,6 +171,27 @@ H.264 / libx264, preset slow, CRF 21,
 profile main, GOP 30, maxrate 6500k, bufsize 12000k,
 tune fastdecode, no B-frames, refs 2,
 AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+
+H.265 Small File:
+H.265 / libx265, preset slow, Main Profile,
+25fps, GOP 250, hvc1 MP4 tag,
+按分辨率和素材复杂度选择目标视频码率,
+AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+
+H.265 Smart Auto:
+H.265 / libx265, preset slow, Main Profile,
+先用 FFmpeg 抽样成 160x90 / 2fps 灰度帧,
+计算空间细节、帧间运动和场景变化,
+自动映射到 Simple / Standard / Complex 目标码率,
+AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+```
+
+H.265 Small File 目标视频码率：
+
+```text
+1920x1080 横屏：Simple 450k / Standard 800k / Complex 1200k
+1080x1920 竖屏：Simple 500k / Standard 1300k / Complex 1800k
+1920x1440 或 1080x2560 高像素屏：Simple 600k / Standard 1400k / Complex 2200k
 ```
 
 ## 打包 Windows 程序

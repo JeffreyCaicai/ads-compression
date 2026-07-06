@@ -1,6 +1,6 @@
 # 广告屏视频压缩工具安装与操作指导手册
 
-版本：V1.3
+版本：V1.5
 适用系统：Windows 10 / Windows 11  
 适用对象：打包交付人员、运营同事、项目执行同事、视频素材整理同事
 
@@ -130,7 +130,7 @@ ffmpeg-release-full.7z
 ffmpeg-release-essentials.7z
 ```
 
-本工具只需要 `ffmpeg.exe` 和 `ffprobe.exe`，通常 `essentials` 版本已经足够。
+本工具需要 `ffmpeg.exe` 和 `ffprobe.exe`。V1.4 增加了 H.265 Small File 模式，因此 FFmpeg 版本必须包含 `libx265` 编码器。`gyan.dev` 的 essentials/release build 通常包含它，但打包前必须验证。
 
 也可以直接打开 gyan.dev 的 FFmpeg Windows builds 页面：
 
@@ -229,7 +229,13 @@ cd path\to\signage_video_compressor\tools\ffmpeg\bin
 .\ffprobe.exe -version
 ```
 
-如果能显示版本信息，说明 FFmpeg 准备成功。
+如果能显示版本信息，再检查是否支持 H.265 编码：
+
+```powershell
+.\ffmpeg.exe -hide_banner -encoders | findstr libx265
+```
+
+如果命令输出中能看到 `libx265` 编码器，说明 FFmpeg 可用于 H.264 和 H.265 模式。如果没有，请下载包含 `libx265` 的 full/release FFmpeg build。
 
 ## 5. 打包人员：安装项目依赖
 
@@ -407,7 +413,9 @@ Car Ad_3.mp4
 4. 根据素材选择 Quality Mode：
    - Standard：普通广告，文件更小；
    - High Motion：汽车、运动、快切、复杂背景等素材，运动画面更清晰，文件更大；
-   - Screen Safe - High Motion：压缩文件在电脑播放正常，但广告屏开头约 1 秒出现花屏、块状异常或局部错位时使用。
+   - Screen Safe - High Motion：压缩文件在电脑播放正常，但广告屏开头约 1 秒出现花屏、块状异常或局部错位时使用；
+   - H.265 Smart Auto - Analyze Content：推荐给支持 H.265 的新屏使用。程序会抽样分析视频复杂度，并自动选择目标码率；
+   - H.265 Small File 手动模式：只有在操作员明确要手动选择 Simple、Standard 或 Complex 时使用。
 5. 点击“开始压缩”。
 6. 等待进度条完成。
 
@@ -436,10 +444,10 @@ Car Ad_3.mp4
 程序会自动检查：
 
 - 输出文件存在且大小大于 0；
-- 视频编码为 H.264；
+- H.264 模式下视频编码为 H.264，H.265 模式下视频编码为 HEVC/H.265；
 - 像素格式为 yuv420p；
 - 分辨率与源文件一致；
-- 帧率约为 30fps；
+- H.264 模式帧率约为 30fps，H.265 模式帧率约为 25fps；
 - 音频为 AAC；
 - 采样率为 48000Hz；
 - 声道数为 2；
@@ -537,9 +545,9 @@ PermissionError: [WinError 5] Access is denied: '...\dist\SignageVideoCompressor
 
 如果仍然失败，可在任务管理器中结束 `SignageVideoCompressor.exe` 后再打包。
 
-## 19. 固定压缩参数
+## 19. 压缩参数
 
-本工具提供三个固定模式：
+本工具提供 H.264 兼容模式和 H.265 小文件模式：
 
 ```text
 Standard:
@@ -560,6 +568,16 @@ profile main, level 4.1, yuv420p, 30 fps,
 GOP 30, maxrate 6500k, bufsize 12000k,
 tune fastdecode, 禁用 B 帧, refs 2,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Smart Auto - Analyze Content:
+HEVC / libx265, preset slow, Main Profile,
+25 fps, GOP 250, hvc1 MP4 tag,
+压缩前抽样 160x90 / 2fps 灰度帧,
+自动选择 Simple / Standard / Complex 目标码率,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Small File 手动模式:
+使用同一套 H.265 参数，但由操作员手动选择 Simple、Standard 或 Complex。
 ```
 
-不支持 H.265、云上传、剪辑、水印或自定义复杂参数。
+不支持云上传、剪辑、水印或自定义复杂参数。

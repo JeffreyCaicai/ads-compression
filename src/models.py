@@ -41,6 +41,9 @@ class VideoJob:
     source_video_codec: str = ""
     source_audio_codec: str = ""
     encoding_mode: str = DEFAULT_ENCODING_MODE
+    content_complexity: str = ""
+    content_complexity_score: float = 0.0
+    target_video_bitrate_kbps: int | None = None
 
 
 @dataclass

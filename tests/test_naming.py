@@ -7,7 +7,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from encoder import build_output_path, build_ffmpeg_args
-from settings import MODE_HIGH_MOTION, MODE_SCREEN_SAFE_HIGH_MOTION, MODE_STANDARD
+from models import VideoInfo
+from settings import (
+    MODE_H265_SMALL_FILE,
+    MODE_H265_SMART_AUTO,
+    MODE_HIGH_MOTION,
+    MODE_SCREEN_SAFE_HIGH_MOTION,
+    MODE_STANDARD,
+)
 
 
 class NamingTests(unittest.TestCase):
@@ -108,6 +115,75 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-tune") + 1], "fastdecode")
         self.assertEqual(args[args.index("-bf") + 1], "0")
         self.assertEqual(args[args.index("-refs") + 1], "2")
+
+    def test_h265_small_file_args_use_target_bitrate_for_source_resolution(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "portrait.mp4"
+            output = temp_path / "out.mp4"
+            info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+
+            args = build_ffmpeg_args(
+                Path("ffmpeg.exe"),
+                source,
+                output,
+                overwrite=True,
+                encoding_mode=MODE_H265_SMALL_FILE,
+                source_info=info,
+            )
+
+        self.assertEqual(args[args.index("-c:v") + 1], "libx265")
+        self.assertEqual(args[args.index("-profile:v") + 1], "main")
+        self.assertEqual(args[args.index("-tag:v") + 1], "hvc1")
+        self.assertEqual(args[args.index("-r") + 1], "25")
+        self.assertEqual(args[args.index("-b:v") + 1], "1300k")
+        self.assertEqual(args[args.index("-maxrate") + 1], "1950k")
+        self.assertEqual(args[args.index("-bufsize") + 1], "3900k")
+        self.assertIn("keyint=250", args[args.index("-x265-params") + 1])
+        self.assertEqual(args[args.index("-c:a") + 1], "aac")
+        self.assertEqual(args[args.index("-b:a") + 1], "96k")
+
+    def test_h265_smart_auto_args_use_analyzed_target_bitrate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "auto.mp4"
+            output = temp_path / "out.mp4"
+            info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+
+            args = build_ffmpeg_args(
+                Path("ffmpeg.exe"),
+                source,
+                output,
+                overwrite=True,
+                encoding_mode=MODE_H265_SMART_AUTO,
+                source_info=info,
+                target_video_bitrate_kbps=1800,
+            )
+
+        self.assertEqual(args[args.index("-c:v") + 1], "libx265")
+        self.assertEqual(args[args.index("-b:v") + 1], "1800k")
+        self.assertEqual(args[args.index("-maxrate") + 1], "2700k")
+        self.assertEqual(args[args.index("-bufsize") + 1], "5400k")
 
 
 if __name__ == "__main__":

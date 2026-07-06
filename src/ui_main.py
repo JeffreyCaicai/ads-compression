@@ -10,6 +10,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from audio_check import detect_volume
+from content_analyzer import ContentAnalysisError, analyze_content
 from encoder import Encoder, build_output_path
 from ffmpeg_utils import (
     FFmpegError,
@@ -37,6 +38,9 @@ from settings import (
     SUPPORTED_ENCODING_MODES,
     SUPPORTED_EXTENSIONS,
     WINDOW_SIZE,
+    CONTENT_STANDARD,
+    is_h265_smart_auto_mode,
+    target_video_bitrate_kbps,
 )
 
 
@@ -281,6 +285,9 @@ class CompressorWindow(tk.Tk):
             job.error_message = ""
             job.output_size_bytes = 0
             job.progress = 0
+            job.content_complexity = ""
+            job.content_complexity_score = 0.0
+            job.target_video_bitrate_kbps = None
             self._refresh_job(job)
 
         self.worker_thread = threading.Thread(
@@ -366,6 +373,9 @@ class CompressorWindow(tk.Tk):
                     job.audio_status = AUDIO_NORMAL
                 self.ui_queue.put(("job", job))
 
+                if is_h265_smart_auto_mode(job.encoding_mode):
+                    self._analyze_job_content(job)
+
                 result = self.encoder.encode(
                     job,
                     overwrite=overwrite,
@@ -403,6 +413,54 @@ class CompressorWindow(tk.Tk):
         except Exception as exc:
             logging.exception("Failed to write report")
             self.ui_queue.put(("error", self.localizer.t("message.report_failed", error=exc)))
+
+    def _analyze_job_content(self, job: VideoJob) -> None:
+        assert self.ffmpeg_paths is not None
+        assert job.info is not None
+        self.ui_queue.put(("log", self.localizer.t("message.analyzing_content", name=job.input_path.name)))
+        try:
+            analysis = analyze_content(
+                self.ffmpeg_paths.ffmpeg,
+                job.input_path,
+                source_width=job.info.width,
+                source_height=job.info.height,
+                duration_sec=job.info.duration_sec,
+            )
+            job.content_complexity = analysis.complexity
+            job.content_complexity_score = analysis.score
+            job.target_video_bitrate_kbps = analysis.target_video_bitrate_kbps
+            self.ui_queue.put(
+                (
+                    "log",
+                    self.localizer.t(
+                        "message.content_analysis_done",
+                        name=job.input_path.name,
+                        complexity=analysis.complexity,
+                        score=analysis.score,
+                        bitrate=analysis.target_video_bitrate_kbps,
+                    ),
+                )
+            )
+        except (ContentAnalysisError, subprocess.TimeoutExpired, OSError) as exc:
+            job.content_complexity = CONTENT_STANDARD
+            job.content_complexity_score = 0.0
+            job.target_video_bitrate_kbps = target_video_bitrate_kbps(
+                job.info.width,
+                job.info.height,
+                job.encoding_mode,
+                complexity=CONTENT_STANDARD,
+            )
+            self.ui_queue.put(
+                (
+                    "log",
+                    self.localizer.t(
+                        "message.content_analysis_failed",
+                        name=job.input_path.name,
+                        error=exc,
+                        bitrate=job.target_video_bitrate_kbps,
+                    ),
+                )
+            )
 
     def _progress_from_worker(self, job: VideoJob, progress: float, completed_base: int, total: int) -> None:
         self.ui_queue.put(("current", progress * 100))

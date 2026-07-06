@@ -1,6 +1,6 @@
 # Signage Video Compressor Installation and User Guide
 
-Version: V1.3
+Version: V1.5
 Supported systems: Windows 10 / Windows 11  
 Audience: build owners, delivery owners, operations staff, project execution staff, and media preparation staff
 
@@ -130,7 +130,7 @@ or:
 ffmpeg-release-essentials.7z
 ```
 
-This tool only needs `ffmpeg.exe` and `ffprobe.exe`, so the `essentials` package is usually enough.
+This tool needs `ffmpeg.exe` and `ffprobe.exe`. Because V1.4 adds H.265 Small File modes, the FFmpeg build must include the `libx265` encoder. The `gyan.dev` essentials/release builds usually include it, but verify before packaging.
 
 You can also open the gyan.dev FFmpeg Windows builds page directly:
 
@@ -229,7 +229,13 @@ Run:
 .\ffprobe.exe -version
 ```
 
-If both commands show version information, FFmpeg is ready.
+If both commands show version information, check H.265 encoder support:
+
+```powershell
+.\ffmpeg.exe -hide_banner -encoders | findstr libx265
+```
+
+If the command prints a `libx265` encoder line, FFmpeg is ready for both H.264 and H.265 modes. If not, download a full/release FFmpeg build that includes `libx265`.
 
 ## 5. Build Owner: Install Project Dependencies
 
@@ -407,7 +413,9 @@ If the output folder is the same as the source folder and the source file is alr
 4. Choose Quality Mode:
    - Standard: general ads, smaller files;
    - High Motion: cars, sports, fast cuts, complex backgrounds, better motion detail, larger files;
-   - Screen Safe - High Motion: use when the compressed file plays well on a computer but the signage screen shows blocks, glitches, or frame corruption during the first second.
+   - Screen Safe - High Motion: use when the compressed file plays well on a computer but the signage screen shows blocks, glitches, or frame corruption during the first second;
+   - H.265 Smart Auto - Analyze Content: recommended for new screens that support H.265. The app samples the video, estimates complexity, and chooses the target bitrate automatically;
+   - H.265 Small File modes: use only when the operator wants to manually choose Simple, Standard, or Complex content.
 5. Click “Start Compression”.
 6. Wait for the progress bars to finish.
 
@@ -436,10 +444,10 @@ If the table status shows “Success”, the file has been compressed and passed
 The app checks:
 
 - output file exists and is larger than 0 bytes;
-- video codec is H.264;
+- video codec is H.264 for H.264 modes, or HEVC/H.265 for H.265 modes;
 - pixel format is yuv420p;
 - resolution matches the source file;
-- frame rate is approximately 30fps;
+- frame rate is approximately 30fps for H.264 modes, or approximately 25fps for H.265 modes;
 - audio codec is AAC;
 - sample rate is 48000Hz;
 - channel count is 2;
@@ -537,9 +545,9 @@ the old `SignageVideoCompressor.exe` is usually still running, or File Explorer 
 
 If it still fails, end `SignageVideoCompressor.exe` in Task Manager and build again.
 
-## 19. Fixed Compression Parameters
+## 19. Compression Parameters
 
-The app provides three fixed modes:
+The app provides H.264 compatibility modes and H.265 small-file modes:
 
 ```text
 Standard:
@@ -560,6 +568,16 @@ profile main, level 4.1, yuv420p, 30 fps,
 GOP 30, maxrate 6500k, bufsize 12000k,
 tune fastdecode, B-frames disabled, refs 2,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Smart Auto - Analyze Content:
+HEVC / libx265, preset slow, Main Profile,
+25 fps, GOP 250, hvc1 MP4 tag,
+samples 160x90 gray frames at 2fps before encoding,
+automatically chooses Simple / Standard / Complex target bitrate,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Small File manual modes:
+same H.265 settings, but the operator chooses Simple, Standard, or Complex.
 ```
 
-It does not support H.265, cloud upload, editing, watermarking, or advanced custom encoding parameters.
+It does not support cloud upload, editing, watermarking, or advanced custom encoding parameters.
