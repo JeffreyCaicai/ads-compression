@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ffmpeg_utils import candidate_roots, find_ffmpeg_paths, parse_ffprobe_json, parse_fraction
+from ffmpeg_utils import candidate_roots, executable_name, find_ffmpeg_paths, parse_ffprobe_json, parse_fraction
 
 
 class FFprobeParseTests(unittest.TestCase):
@@ -76,8 +76,8 @@ class FFprobeParseTests(unittest.TestCase):
             app_dir = (Path(temp_dir) / "SignageVideoCompressor").resolve()
             bin_dir = app_dir / "_internal" / "tools" / "ffmpeg" / "bin"
             bin_dir.mkdir(parents=True)
-            ffmpeg = bin_dir / "ffmpeg"
-            ffprobe = bin_dir / "ffprobe"
+            ffmpeg = bin_dir / executable_name("ffmpeg")
+            ffprobe = bin_dir / executable_name("ffprobe")
             ffmpeg.write_text("", encoding="utf-8")
             ffprobe.write_text("", encoding="utf-8")
 
