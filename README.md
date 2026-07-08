@@ -40,7 +40,7 @@ tools/ffmpeg/bin/ffprobe.exe
 
 ## 画质模式
 
-界面提供八种 Quality Mode：
+界面提供九种 Quality Mode：
 
 ```text
 Standard - General Compression
@@ -59,6 +59,10 @@ H.265 Production - Best Detail
 H.265 / 25fps / 固定使用 Complex 目标码率
 适合支持 H.265 的新屏正式广告投放。优先保留人物、产品、字幕、logo 和车身线条等细节，文件通常大于 Smart Auto，但仍明显小于 H.264。
 
+H.265 Production - Best Detail (2-pass)
+H.265 / 25fps / 固定使用 Complex 目标码率 / 两遍编码
+适合重点正式投放、与阿里云样片对比或对细节要求更高的素材。码率分配更充分，但压缩时间通常接近一遍编码的两倍。
+
 H.265 Smart Auto - Analyze Content
 H.265 / 25fps / 先快速抽样分析画面复杂度，再自动选择目标码率
 适合大多数已确认支持 H.265 的新屏，是优先推荐的小文件模式。
@@ -76,7 +80,7 @@ H.265 / 25fps / 更低目标码率
 适合静态画面、简单背景、文字或低运动素材。
 ```
 
-默认使用 Standard，保留 H.264 兼容行为。新屏正式投放建议优先使用 H.265 Production - Best Detail；如果目标是进一步节省流量，可以使用 H.265 Smart Auto - Analyze Content，程序会自动判断素材复杂度并选择 Simple / Standard / Complex 目标码率。如果需要人工指定复杂度，可以使用三个 H.265 Small File 手动模式。75 块只支持 H.264 的老屏继续使用 Standard / High Motion / Screen Safe。
+默认使用 Standard，保留 H.264 兼容行为。新屏正式投放建议使用 H.265 Production - Best Detail；重点素材或需要更好码率分配时使用 H.265 Production - Best Detail (2-pass)。如果目标是进一步节省流量，可以使用 H.265 Smart Auto - Analyze Content，程序会自动判断素材复杂度并选择 Simple / Standard / Complex 目标码率。如果需要人工指定复杂度，可以使用三个 H.265 Small File 手动模式。75 块只支持 H.264 的老屏继续使用 Standard / High Motion / Screen Safe。
 
 ## 输出文件在哪里
 
@@ -179,6 +183,13 @@ AAC 96k, 48000 Hz, 双声道, MP4 + faststart
 H.265 Production - Best Detail:
 H.265 / libx265, preset slow, Main Profile,
 25fps, GOP 250, hvc1 MP4 tag,
+固定使用 Complex 目标视频码率,
+AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+
+H.265 Production - Best Detail (2-pass):
+H.265 / libx265, preset slow, Main Profile,
+25fps, GOP 250, hvc1 MP4 tag,
+第一遍分析视频，第二遍正式输出 MP4,
 固定使用 Complex 目标视频码率,
 AAC 96k, 48000 Hz, 双声道, MP4 + faststart
 

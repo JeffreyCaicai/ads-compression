@@ -9,7 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from models import CompressionResult, VideoInfo, VideoJob
 from report import REPORT_FIELDS, write_report
-from settings import MODE_H265_PRODUCTION_BEST_DETAIL, MODE_H265_SMALL_FILE, MODE_H265_SMART_AUTO, MODE_HIGH_MOTION
+from settings import (
+    MODE_H265_PRODUCTION_BEST_DETAIL,
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+    MODE_H265_SMALL_FILE,
+    MODE_H265_SMART_AUTO,
+    MODE_HIGH_MOTION,
+)
 
 
 class ReportTests(unittest.TestCase):
@@ -217,6 +223,61 @@ class ReportTests(unittest.TestCase):
                 rows = list(csv.DictReader(file_obj))
 
         self.assertEqual(rows[0]["encoding_mode"], "h265_production_best_detail")
+        self.assertEqual(rows[0]["target_video_bitrate_kbps"], "1800")
+        self.assertEqual(rows[0]["target_fps"], "25")
+        self.assertEqual(rows[0]["content_complexity"], "production_best_detail")
+        self.assertEqual(rows[0]["content_complexity_score"], "")
+
+    def test_write_report_records_h265_production_best_detail_2pass_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "source.mp4"
+            output = temp_path / "out.mp4"
+            source_info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+            output_info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+            job = VideoJob(
+                input_path=source,
+                output_path=output,
+                info=source_info,
+                audio_status="normal",
+                status="success",
+                original_size_bytes=10_000_000,
+                output_size_bytes=2_000_000,
+                encoding_mode=MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+            )
+            result = CompressionResult(
+                job=job,
+                status="success",
+                output_info=output_info,
+                created_at="2026-06-18T10:00:00",
+            )
+
+            report_path = write_report(temp_path, [result])
+
+            with report_path.open("r", encoding="utf-8-sig", newline="") as file_obj:
+                rows = list(csv.DictReader(file_obj))
+
+        self.assertEqual(rows[0]["encoding_mode"], "h265_production_best_detail_2pass")
         self.assertEqual(rows[0]["target_video_bitrate_kbps"], "1800")
         self.assertEqual(rows[0]["target_fps"], "25")
         self.assertEqual(rows[0]["content_complexity"], "production_best_detail")

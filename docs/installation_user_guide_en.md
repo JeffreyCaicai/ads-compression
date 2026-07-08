@@ -1,6 +1,6 @@
 # Signage Video Compressor Installation and User Guide
 
-Version: V1.6
+Version: V1.7
 Supported systems: Windows 10 / Windows 11  
 Audience: build owners, delivery owners, operations staff, project execution staff, and media preparation staff
 
@@ -415,6 +415,7 @@ If the output folder is the same as the source folder and the source file is alr
    - High Motion: cars, sports, fast cuts, complex backgrounds, better motion detail, larger files;
    - Screen Safe - High Motion: use when the compressed file plays well on a computer but the signage screen shows blocks, glitches, or frame corruption during the first second;
    - H.265 Production - Best Detail: recommended for official ad delivery on new screens that support H.265. It always uses the Complex target bitrate and prioritizes detail retention;
+   - H.265 Production - Best Detail (2-pass): recommended for important official ads or material that needs stronger detail retention. It analyzes once and then writes the final output, so bitrate allocation is better but encoding time is usually close to twice as long;
    - H.265 Smart Auto - Analyze Content: recommended for traffic-saving work on new screens that support H.265. The app samples the video, estimates complexity, and chooses the target bitrate automatically;
    - H.265 Small File modes: use only when the operator wants to manually choose Simple, Standard, or Complex content.
 5. Click “Start Compression”.
@@ -573,6 +574,13 @@ AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 H.265 Production - Best Detail:
 HEVC / libx265, preset slow, Main Profile,
 25 fps, GOP 250, hvc1 MP4 tag,
+always uses the Complex target bitrate,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Production - Best Detail (2-pass):
+HEVC / libx265, preset slow, Main Profile,
+25 fps, GOP 250, hvc1 MP4 tag,
+first pass analyzes video, second pass writes final MP4,
 always uses the Complex target bitrate,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 

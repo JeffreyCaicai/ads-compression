@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Localizer, normalize_language
 from settings import (
     MODE_H265_PRODUCTION_BEST_DETAIL,
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMART_AUTO,
     MODE_SCREEN_SAFE_HIGH_MOTION,
@@ -43,6 +44,10 @@ class LocalizationTests(unittest.TestCase):
         self.assertEqual(
             localizer.encoding_mode(MODE_H265_PRODUCTION_BEST_DETAIL),
             "H.265 Production - Best Detail",
+        )
+        self.assertEqual(
+            localizer.encoding_mode(MODE_H265_PRODUCTION_BEST_DETAIL_2PASS),
+            "H.265 Production - Best Detail (2-pass)",
         )
         self.assertEqual(
             localizer.encoding_mode(MODE_H265_SMART_AUTO),

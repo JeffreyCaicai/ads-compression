@@ -6,10 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from encoder import build_output_path, build_ffmpeg_args
+from encoder import build_output_path, build_ffmpeg_args, build_ffmpeg_passlog_path, build_ffmpeg_two_pass_args
 from models import VideoInfo
 from settings import (
     MODE_H265_PRODUCTION_BEST_DETAIL,
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMART_AUTO,
     MODE_HIGH_MOTION,
@@ -223,6 +224,113 @@ class NamingTests(unittest.TestCase):
             args[args.index("-x265-params") + 1],
             "keyint=250:min-keyint=25:scenecut=40",
         )
+
+    def test_h265_two_pass_passlog_path_is_unique_per_source_and_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            output = temp_path / "out.mp4"
+            first = build_ffmpeg_passlog_path(output, temp_path / "a" / "same-name.mp4")
+            second = build_ffmpeg_passlog_path(output, temp_path / "b" / "same-name.mp4")
+
+        self.assertEqual(first.parent, output.parent)
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.name.startswith(".out_"))
+        self.assertTrue(first.name.endswith("_x265_2pass"))
+
+    def test_h265_two_pass_first_pass_args_analyze_video_to_null_without_audio(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "best-detail.mp4"
+            output = temp_path / "out.mp4"
+            passlog = temp_path / ".out_x265_2pass"
+            info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+
+            args = build_ffmpeg_two_pass_args(
+                Path("ffmpeg.exe"),
+                source,
+                output,
+                pass_number=1,
+                passlog_path=passlog,
+                overwrite=True,
+                encoding_mode=MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+                source_info=info,
+            )
+
+        self.assertEqual(args[args.index("-c:v") + 1], "libx265")
+        self.assertEqual(args[args.index("-b:v") + 1], "1800k")
+        self.assertEqual(args[args.index("-pass") + 1], "1")
+        self.assertEqual(args[args.index("-passlogfile") + 1], str(passlog))
+        self.assertIn("-an", args)
+        self.assertEqual(args[args.index("-f") + 1], "null")
+        self.assertIn(args[-1], {"NUL", "/dev/null"})
+        self.assertNotIn("-tag:v", args)
+        self.assertNotIn("-c:a", args)
+        self.assertNotIn(str(output), args)
+
+    def test_h265_two_pass_second_pass_args_write_final_mp4_with_audio(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "best-detail.mp4"
+            output = temp_path / "out.mp4"
+            passlog = temp_path / ".out_x265_2pass"
+            info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+
+            args = build_ffmpeg_two_pass_args(
+                Path("ffmpeg.exe"),
+                source,
+                output,
+                pass_number=2,
+                passlog_path=passlog,
+                overwrite=True,
+                encoding_mode=MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+                source_info=info,
+            )
+
+        self.assertEqual(args[args.index("-c:v") + 1], "libx265")
+        self.assertEqual(args[args.index("-b:v") + 1], "1800k")
+        self.assertEqual(args[args.index("-tag:v") + 1], "hvc1")
+        self.assertEqual(args[args.index("-pass") + 1], "2")
+        self.assertEqual(args[args.index("-passlogfile") + 1], str(passlog))
+        self.assertEqual(args[args.index("-c:a") + 1], "aac")
+        self.assertEqual(args[args.index("-b:a") + 1], "96k")
+        self.assertEqual(args[args.index("-movflags") + 1], "+faststart")
+        self.assertEqual(args[args.index("-progress") + 1], "pipe:1")
+        self.assertEqual(args[-1], str(output))
+
+    def test_h265_two_pass_args_reject_invalid_pass_number(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            with self.assertRaises(ValueError):
+                build_ffmpeg_two_pass_args(
+                    Path("ffmpeg.exe"),
+                    temp_path / "in.mp4",
+                    temp_path / "out.mp4",
+                    pass_number=3,
+                    passlog_path=temp_path / ".passlog",
+                    overwrite=True,
+                    encoding_mode=MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+                )
 
 
 if __name__ == "__main__":

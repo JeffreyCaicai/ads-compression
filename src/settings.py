@@ -37,6 +37,7 @@ MODE_H265_SMALL_FILE_SIMPLE = "h265_small_file_simple"
 MODE_H265_SMALL_FILE = "h265_small_file"
 MODE_H265_SMALL_FILE_COMPLEX = "h265_small_file_complex"
 MODE_H265_PRODUCTION_BEST_DETAIL = "h265_production_best_detail"
+MODE_H265_PRODUCTION_BEST_DETAIL_2PASS = "h265_production_best_detail_2pass"
 MODE_H265_SMART_AUTO = "h265_smart_auto"
 DEFAULT_ENCODING_MODE = MODE_STANDARD
 H265_ENCODING_MODES = (
@@ -44,6 +45,7 @@ H265_ENCODING_MODES = (
     MODE_H265_SMALL_FILE,
     MODE_H265_SMALL_FILE_COMPLEX,
     MODE_H265_PRODUCTION_BEST_DETAIL,
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     MODE_H265_SMART_AUTO,
 )
 SUPPORTED_ENCODING_MODES = (
@@ -51,6 +53,7 @@ SUPPORTED_ENCODING_MODES = (
     MODE_HIGH_MOTION,
     MODE_SCREEN_SAFE_HIGH_MOTION,
     MODE_H265_PRODUCTION_BEST_DETAIL,
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     MODE_H265_SMART_AUTO,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMALL_FILE_COMPLEX,
@@ -72,6 +75,7 @@ H265_COMPLEXITY_BY_MODE = {
     MODE_H265_SMALL_FILE: CONTENT_STANDARD,
     MODE_H265_SMALL_FILE_COMPLEX: CONTENT_COMPLEX,
     MODE_H265_PRODUCTION_BEST_DETAIL: CONTENT_COMPLEX,
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS: CONTENT_COMPLEX,
     MODE_H265_SMART_AUTO: CONTENT_STANDARD,
 }
 
@@ -169,6 +173,15 @@ ENCODING_PRESETS = {
         "fps": "25",
         "rate_control": "target_bitrate",
     },
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS: {
+        "suffix": "_h265_production_best_detail_2pass_aac96",
+        "crf": "",
+        "preset": "slow",
+        "profile": "main",
+        "codec": "libx265",
+        "fps": "25",
+        "rate_control": "target_bitrate_2pass",
+    },
     MODE_H265_SMART_AUTO: {
         "suffix": "_h265_smart_auto_aac96",
         "crf": "",
@@ -191,6 +204,10 @@ def is_h265_mode(mode: str) -> bool:
 
 def is_h265_smart_auto_mode(mode: str) -> bool:
     return mode == MODE_H265_SMART_AUTO
+
+
+def is_h265_two_pass_mode(mode: str) -> bool:
+    return mode == MODE_H265_PRODUCTION_BEST_DETAIL_2PASS
 
 
 def target_fps_for_mode(mode: str) -> float:

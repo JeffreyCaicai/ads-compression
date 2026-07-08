@@ -8,6 +8,7 @@ from models import CompressionResult, VideoInfo, VideoJob
 from settings import (
     CONTENT_PRODUCTION_BEST_DETAIL,
     MODE_H265_PRODUCTION_BEST_DETAIL,
+    MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     encoding_preset,
     is_h265_mode,
     target_fps_for_mode,
@@ -62,7 +63,10 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
     elif source_info and is_h265_mode(job.encoding_mode):
         target_bitrate = str(target_video_bitrate_kbps(source_info.width, source_info.height, job.encoding_mode))
     content_complexity = job.content_complexity
-    if not content_complexity and job.encoding_mode == MODE_H265_PRODUCTION_BEST_DETAIL:
+    if not content_complexity and job.encoding_mode in {
+        MODE_H265_PRODUCTION_BEST_DETAIL,
+        MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+    }:
         content_complexity = CONTENT_PRODUCTION_BEST_DETAIL
     return {
         "source_file": str(job.input_path),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import os
 import subprocess
 import threading
 from collections import deque
@@ -23,6 +25,7 @@ from settings import (
     STATUS_SUCCESS,
     encoding_preset,
     is_h265_mode,
+    is_h265_two_pass_mode,
     target_video_bitrate_kbps,
 )
 
@@ -96,6 +99,79 @@ def build_ffmpeg_args(
     return args
 
 
+def build_ffmpeg_passlog_path(output_path: Path, input_path: Path) -> Path:
+    token = f"{input_path.resolve()}->{output_path.resolve()}".encode("utf-8")
+    digest = hashlib.sha1(token).hexdigest()[:12]
+    return output_path.parent / f".{output_path.stem}_{digest}_x265_2pass"
+
+
+def build_ffmpeg_two_pass_args(
+    ffmpeg_path: Path,
+    input_path: Path,
+    output_path: Path,
+    pass_number: int,
+    passlog_path: Path,
+    overwrite: bool = True,
+    encoding_mode: str = DEFAULT_ENCODING_MODE,
+    source_info: VideoInfo | None = None,
+    target_video_bitrate_kbps: int | None = None,
+) -> list[str]:
+    if pass_number not in {1, 2}:
+        raise ValueError("pass_number must be 1 or 2")
+
+    overwrite_flag = "-y" if overwrite else "-y"
+    preset = encoding_preset(encoding_mode)
+    args = [
+        str(ffmpeg_path),
+        overwrite_flag,
+        "-hide_banner",
+        "-i",
+        str(input_path),
+        "-map",
+        "0:v:0",
+    ]
+    if pass_number == 2:
+        args.extend(["-map", "0:a:0?"])
+
+    args.extend(
+        _h265_video_args(
+            preset,
+            encoding_mode,
+            source_info,
+            target_video_bitrate_kbps,
+            include_mp4_tag=pass_number == 2,
+        )
+    )
+    args.extend(["-pass", str(pass_number), "-passlogfile", str(passlog_path)])
+
+    if pass_number == 1:
+        args.extend(["-an", "-progress", "pipe:1", "-nostats", "-f", "null", _null_output_target()])
+    else:
+        args.extend(
+            [
+                "-c:a",
+                "aac",
+                "-b:a",
+                "96k",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-movflags",
+                "+faststart",
+                "-progress",
+                "pipe:1",
+                "-nostats",
+                str(output_path),
+            ]
+        )
+    return args
+
+
+def _null_output_target() -> str:
+    return "NUL" if os.name == "nt" else "/dev/null"
+
+
 def _h264_video_args(preset: dict[str, str]) -> list[str]:
     args = [
         "-c:v",
@@ -137,6 +213,7 @@ def _h265_video_args(
     encoding_mode: str,
     source_info: VideoInfo | None,
     target_video_bitrate_kbps_override: int | None,
+    include_mp4_tag: bool = True,
 ) -> list[str]:
     width = source_info.width if source_info else 1920
     height = source_info.height if source_info else 1080
@@ -148,15 +225,13 @@ def _h265_video_args(
         f"min-keyint={H265_KEYINT_MIN}:"
         f"scenecut={H265_SC_THRESHOLD}"
     )
-    return [
+    args = [
         "-c:v",
         "libx265",
         "-preset",
         preset["preset"],
         "-profile:v",
         preset["profile"],
-        "-tag:v",
-        "hvc1",
         "-pix_fmt",
         "yuv420p",
         "-r",
@@ -170,6 +245,9 @@ def _h265_video_args(
         "-x265-params",
         x265_params,
     ]
+    if include_mp4_tag:
+        args.extend(["-tag:v", "hvc1"])
+    return args
 
 
 class Encoder:
@@ -200,6 +278,8 @@ class Encoder:
             return self._fail(job, PROBE_ERROR_MESSAGE)
         if not job.info.has_audio:
             return self._fail(job, NO_AUDIO_MESSAGE)
+        if is_h265_two_pass_mode(job.encoding_mode):
+            return self._encode_h265_two_pass(job, overwrite, cancel_event, progress_callback)
 
         job.status = STATUS_PROCESSING
         job.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -213,6 +293,96 @@ class Encoder:
             target_video_bitrate_kbps=job.target_video_bitrate_kbps,
         )
         logging.info("Running ffmpeg: %s", args)
+        try:
+            return_code, stderr_tail, cancelled = self._run_ffmpeg_process(
+                args,
+                job,
+                cancel_event,
+                progress_callback=progress_callback,
+            )
+        except FFmpegError as exc:
+            return self._fail(job, str(exc))
+        return self._complete_after_ffmpeg(job, return_code, stderr_tail, cancelled)
+
+    def _encode_h265_two_pass(
+        self,
+        job: VideoJob,
+        overwrite: bool,
+        cancel_event: threading.Event,
+        progress_callback: ProgressCallback | None,
+    ) -> CompressionResult:
+        assert job.info is not None
+        job.status = STATUS_PROCESSING
+        job.output_path.parent.mkdir(parents=True, exist_ok=True)
+        passlog_path = build_ffmpeg_passlog_path(job.output_path, job.input_path)
+        stderr_tail: list[str] = []
+        try:
+            first_pass_args = build_ffmpeg_two_pass_args(
+                self.paths.ffmpeg,
+                job.input_path,
+                job.output_path,
+                pass_number=1,
+                passlog_path=passlog_path,
+                overwrite=overwrite,
+                encoding_mode=job.encoding_mode,
+                source_info=job.info,
+                target_video_bitrate_kbps=job.target_video_bitrate_kbps,
+            )
+            logging.info("Running ffmpeg first pass: %s", first_pass_args)
+            try:
+                return_code, first_stderr, cancelled = self._run_ffmpeg_process(
+                    first_pass_args,
+                    job,
+                    cancel_event,
+                    progress_callback=progress_callback,
+                    progress_base=0.0,
+                    progress_scale=0.5,
+                )
+            except FFmpegError as exc:
+                return self._fail(job, str(exc), stderr_tail=stderr_tail)
+            stderr_tail.extend(first_stderr)
+            if cancelled:
+                return self._cancelled_result(job, stderr_tail)
+            if return_code != 0:
+                return self._fail(job, self._ffmpeg_error_message(return_code, first_stderr), stderr_tail=stderr_tail)
+
+            second_pass_args = build_ffmpeg_two_pass_args(
+                self.paths.ffmpeg,
+                job.input_path,
+                job.output_path,
+                pass_number=2,
+                passlog_path=passlog_path,
+                overwrite=overwrite,
+                encoding_mode=job.encoding_mode,
+                source_info=job.info,
+                target_video_bitrate_kbps=job.target_video_bitrate_kbps,
+            )
+            logging.info("Running ffmpeg second pass: %s", second_pass_args)
+            try:
+                return_code, second_stderr, cancelled = self._run_ffmpeg_process(
+                    second_pass_args,
+                    job,
+                    cancel_event,
+                    progress_callback=progress_callback,
+                    progress_base=0.5,
+                    progress_scale=0.5,
+                )
+            except FFmpegError as exc:
+                return self._fail(job, str(exc), stderr_tail=stderr_tail)
+            stderr_tail.extend(second_stderr)
+            return self._complete_after_ffmpeg(job, return_code, stderr_tail, cancelled)
+        finally:
+            cleanup_passlog_files(passlog_path)
+
+    def _run_ffmpeg_process(
+        self,
+        args: list[str],
+        job: VideoJob,
+        cancel_event: threading.Event,
+        progress_callback: ProgressCallback | None = None,
+        progress_base: float = 0.0,
+        progress_scale: float = 1.0,
+    ) -> tuple[int, list[str], bool]:
         stderr_tail: deque[str] = deque(maxlen=100)
 
         try:
@@ -227,7 +397,7 @@ class Encoder:
                 bufsize=1,
             )
         except OSError as exc:
-            return self._fail(job, f"无法启动 FFmpeg：{exc}")
+            raise FFmpegError(f"无法启动 FFmpeg：{exc}") from exc
 
         with self._lock:
             self._process = process
@@ -251,7 +421,8 @@ class Encoder:
                     break
                 key, _, value = line.strip().partition("=")
                 if key == "out_time_ms":
-                    progress = parse_progress(value, job.info.duration_sec)
+                    raw_progress = parse_progress(value, job.info.duration_sec if job.info else 0)
+                    progress = progress_base + raw_progress * progress_scale
                     job.progress = progress
                     if progress_callback:
                         progress_callback(job, progress)
@@ -262,18 +433,19 @@ class Encoder:
                 if self._process is process:
                     self._process = None
 
-        if cancel_event.is_set():
-            job.status = STATUS_CANCELLED
-            return CompressionResult(
-                job=job,
-                status="cancelled",
-                error_message="Cancelled by user.",
-                created_at=datetime.now().isoformat(timespec="seconds"),
-                ffmpeg_stderr_tail=list(stderr_tail),
-            )
+        return return_code, list(stderr_tail), cancel_event.is_set()
+
+    def _complete_after_ffmpeg(
+        self,
+        job: VideoJob,
+        return_code: int,
+        stderr_tail: list[str],
+        cancelled: bool,
+    ) -> CompressionResult:
+        if cancelled:
+            return self._cancelled_result(job, stderr_tail)
         if return_code != 0:
-            error = "\n".join(list(stderr_tail)[-5:]) or f"FFmpeg 退出码：{return_code}"
-            return self._fail(job, f"压缩失败：{error}", stderr_tail=list(stderr_tail))
+            return self._fail(job, self._ffmpeg_error_message(return_code, stderr_tail), stderr_tail=stderr_tail)
 
         job.output_size_bytes = job.output_path.stat().st_size if job.output_path.exists() else 0
         try:
@@ -297,7 +469,17 @@ class Encoder:
             status="success",
             output_info=output_info,
             created_at=datetime.now().isoformat(timespec="seconds"),
-            ffmpeg_stderr_tail=list(stderr_tail),
+            ffmpeg_stderr_tail=stderr_tail,
+        )
+
+    def _cancelled_result(self, job: VideoJob, stderr_tail: list[str]) -> CompressionResult:
+        job.status = STATUS_CANCELLED
+        return CompressionResult(
+            job=job,
+            status="cancelled",
+            error_message="Cancelled by user.",
+            created_at=datetime.now().isoformat(timespec="seconds"),
+            ffmpeg_stderr_tail=stderr_tail,
         )
 
     def _fail(self, job: VideoJob, message: str, stderr_tail: list[str] | None = None) -> CompressionResult:
@@ -312,6 +494,11 @@ class Encoder:
             ffmpeg_stderr_tail=stderr_tail or [],
         )
 
+    @staticmethod
+    def _ffmpeg_error_message(return_code: int, stderr_tail: list[str]) -> str:
+        error = "\n".join(stderr_tail[-5:]) or f"FFmpeg 退出码：{return_code}"
+        return f"压缩失败：{error}"
+
 
 def parse_progress(value: str, duration_sec: float) -> float:
     if duration_sec <= 0:
@@ -321,3 +508,20 @@ def parse_progress(value: str, duration_sec: float) -> float:
     except ValueError:
         return 0.0
     return max(0.0, min(seconds / duration_sec, 1.0))
+
+
+def cleanup_passlog_files(passlog_path: Path) -> None:
+    candidates = [
+        passlog_path,
+        passlog_path.with_name(passlog_path.name + "-0.log"),
+        passlog_path.with_name(passlog_path.name + "-0.log.mbtree"),
+        passlog_path.with_name(passlog_path.name + ".log"),
+        passlog_path.with_name(passlog_path.name + ".log.mbtree"),
+    ]
+    for candidate in candidates:
+        try:
+            candidate.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            logging.warning("Unable to remove passlog file: %s", candidate)

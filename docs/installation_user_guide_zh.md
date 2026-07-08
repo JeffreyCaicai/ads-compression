@@ -1,6 +1,6 @@
 # 广告屏视频压缩工具安装与操作指导手册
 
-版本：V1.6
+版本：V1.7
 适用系统：Windows 10 / Windows 11  
 适用对象：打包交付人员、运营同事、项目执行同事、视频素材整理同事
 
@@ -415,6 +415,7 @@ Car Ad_3.mp4
    - High Motion：汽车、运动、快切、复杂背景等素材，运动画面更清晰，文件更大；
    - Screen Safe - High Motion：压缩文件在电脑播放正常，但广告屏开头约 1 秒出现花屏、块状异常或局部错位时使用；
    - H.265 Production - Best Detail：推荐给支持 H.265 的新屏正式广告投放使用，固定使用 Complex 目标码率，优先保留细节；
+   - H.265 Production - Best Detail (2-pass)：推荐给重点正式投放或细节要求更高的素材使用。它会先分析一遍再正式输出，码率分配更好，但耗时通常接近两倍；
    - H.265 Smart Auto - Analyze Content：推荐给支持 H.265 的新屏省流量使用。程序会抽样分析视频复杂度，并自动选择目标码率；
    - H.265 Small File 手动模式：只有在操作员明确要手动选择 Simple、Standard 或 Complex 时使用。
 5. 点击“开始压缩”。
@@ -573,6 +574,13 @@ AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 H.265 Production - Best Detail:
 HEVC / libx265, preset slow, Main Profile,
 25 fps, GOP 250, hvc1 MP4 tag,
+固定使用 Complex 目标码率,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Production - Best Detail (2-pass):
+HEVC / libx265, preset slow, Main Profile,
+25 fps, GOP 250, hvc1 MP4 tag,
+第一遍分析视频，第二遍正式输出 MP4,
 固定使用 Complex 目标码率,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 
