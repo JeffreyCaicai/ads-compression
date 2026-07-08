@@ -1,6 +1,6 @@
 # Signage Video Compressor Installation and User Guide
 
-Version: V1.5
+Version: V1.6
 Supported systems: Windows 10 / Windows 11  
 Audience: build owners, delivery owners, operations staff, project execution staff, and media preparation staff
 
@@ -414,7 +414,8 @@ If the output folder is the same as the source folder and the source file is alr
    - Standard: general ads, smaller files;
    - High Motion: cars, sports, fast cuts, complex backgrounds, better motion detail, larger files;
    - Screen Safe - High Motion: use when the compressed file plays well on a computer but the signage screen shows blocks, glitches, or frame corruption during the first second;
-   - H.265 Smart Auto - Analyze Content: recommended for new screens that support H.265. The app samples the video, estimates complexity, and chooses the target bitrate automatically;
+   - H.265 Production - Best Detail: recommended for official ad delivery on new screens that support H.265. It always uses the Complex target bitrate and prioritizes detail retention;
+   - H.265 Smart Auto - Analyze Content: recommended for traffic-saving work on new screens that support H.265. The app samples the video, estimates complexity, and chooses the target bitrate automatically;
    - H.265 Small File modes: use only when the operator wants to manually choose Simple, Standard, or Complex content.
 5. Click “Start Compression”.
 6. Wait for the progress bars to finish.
@@ -567,6 +568,12 @@ H.264 / libx264, CRF 21, preset slow,
 profile main, level 4.1, yuv420p, 30 fps,
 GOP 30, maxrate 6500k, bufsize 12000k,
 tune fastdecode, B-frames disabled, refs 2,
+AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Production - Best Detail:
+HEVC / libx265, preset slow, Main Profile,
+25 fps, GOP 250, hvc1 MP4 tag,
+always uses the Complex target bitrate,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
 
 H.265 Smart Auto - Analyze Content:

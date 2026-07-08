@@ -5,7 +5,14 @@ from datetime import datetime
 from pathlib import Path
 
 from models import CompressionResult, VideoInfo, VideoJob
-from settings import encoding_preset, is_h265_mode, target_fps_for_mode, target_video_bitrate_kbps
+from settings import (
+    CONTENT_PRODUCTION_BEST_DETAIL,
+    MODE_H265_PRODUCTION_BEST_DETAIL,
+    encoding_preset,
+    is_h265_mode,
+    target_fps_for_mode,
+    target_video_bitrate_kbps,
+)
 
 
 REPORT_FIELDS = [
@@ -54,6 +61,9 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
         target_bitrate = str(job.target_video_bitrate_kbps)
     elif source_info and is_h265_mode(job.encoding_mode):
         target_bitrate = str(target_video_bitrate_kbps(source_info.width, source_info.height, job.encoding_mode))
+    content_complexity = job.content_complexity
+    if not content_complexity and job.encoding_mode == MODE_H265_PRODUCTION_BEST_DETAIL:
+        content_complexity = CONTENT_PRODUCTION_BEST_DETAIL
     return {
         "source_file": str(job.input_path),
         "output_file": str(job.output_path),
@@ -74,7 +84,7 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
         "preset": preset["preset"],
         "target_video_bitrate_kbps": target_bitrate,
         "target_fps": format_number(target_fps_for_mode(job.encoding_mode)),
-        "content_complexity": job.content_complexity,
+        "content_complexity": content_complexity,
         "content_complexity_score": format_number(job.content_complexity_score) if job.content_complexity_score else "",
         "created_at": result.created_at or datetime.now().isoformat(timespec="seconds"),
     }

@@ -1,6 +1,6 @@
 # 广告屏视频压缩工具
 
-这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式，并保留源视频分辨率。默认输出仍为 H.264 + AAC 96k；支持 H.265 Small File 和 H.265 Smart Auto 模式，用于已确认支持 H.265 的新屏降低传输成本。
+这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式，并保留源视频分辨率。默认输出仍为 H.264 + AAC 96k；支持 H.265 Production、H.265 Small File 和 H.265 Smart Auto 模式，用于已确认支持 H.265 的新屏降低传输成本。
 
 ## 如何启动
 
@@ -40,7 +40,7 @@ tools/ffmpeg/bin/ffprobe.exe
 
 ## 画质模式
 
-界面提供七种 Quality Mode：
+界面提供八种 Quality Mode：
 
 ```text
 Standard - General Compression
@@ -54,6 +54,10 @@ H.264，适合汽车、运动、快切、复杂背景等高运动素材，画质
 Screen Safe - High Motion
 CRF 21 / maxrate 6500k / bufsize 12000k / GOP 30 / fastdecode
 H.264，适合电脑播放正常、但广告屏开头约 1 秒出现花屏或块状异常的高运动素材。文件会更大，优先保证老屏或弱解码屏稳定。
+
+H.265 Production - Best Detail
+H.265 / 25fps / 固定使用 Complex 目标码率
+适合支持 H.265 的新屏正式广告投放。优先保留人物、产品、字幕、logo 和车身线条等细节，文件通常大于 Smart Auto，但仍明显小于 H.264。
 
 H.265 Smart Auto - Analyze Content
 H.265 / 25fps / 先快速抽样分析画面复杂度，再自动选择目标码率
@@ -72,7 +76,7 @@ H.265 / 25fps / 更低目标码率
 适合静态画面、简单背景、文字或低运动素材。
 ```
 
-默认使用 Standard，保留 H.264 兼容行为。新屏建议优先使用 H.265 Smart Auto - Analyze Content；程序会自动判断素材复杂度并选择 Simple / Standard / Complex 目标码率。如果需要人工指定复杂度，可以使用三个 H.265 Small File 手动模式。75 块只支持 H.264 的老屏继续使用 Standard / High Motion / Screen Safe。
+默认使用 Standard，保留 H.264 兼容行为。新屏正式投放建议优先使用 H.265 Production - Best Detail；如果目标是进一步节省流量，可以使用 H.265 Smart Auto - Analyze Content，程序会自动判断素材复杂度并选择 Simple / Standard / Complex 目标码率。如果需要人工指定复杂度，可以使用三个 H.265 Small File 手动模式。75 块只支持 H.264 的老屏继续使用 Standard / High Motion / Screen Safe。
 
 ## 输出文件在哪里
 
@@ -106,11 +110,11 @@ H.265 / 25fps / 更低目标码率
 
 - 输出文件存在且大小大于 0；
 - H.264 模式下视频编码为 H.264；
-- H.265 Small File / Smart Auto 模式下视频编码为 HEVC/H.265；
+- H.265 Production / Small File / Smart Auto 模式下视频编码为 HEVC/H.265；
 - 像素格式为 yuv420p；
 - 分辨率与源文件一致；
 - H.264 模式帧率约为 30fps；
-- H.265 Small File / Smart Auto 模式帧率约为 25fps；
+- H.265 Production / Small File / Smart Auto 模式帧率约为 25fps；
 - 音频为 AAC / 48000Hz / 双声道；
 - 输出时长与源文件差异不超过 0.5 秒。
 
@@ -172,6 +176,12 @@ profile main, GOP 30, maxrate 6500k, bufsize 12000k,
 tune fastdecode, no B-frames, refs 2,
 AAC 96k, 48000 Hz, 双声道, MP4 + faststart
 
+H.265 Production - Best Detail:
+H.265 / libx265, preset slow, Main Profile,
+25fps, GOP 250, hvc1 MP4 tag,
+固定使用 Complex 目标视频码率,
+AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+
 H.265 Small File:
 H.265 / libx265, preset slow, Main Profile,
 25fps, GOP 250, hvc1 MP4 tag,
@@ -186,7 +196,7 @@ H.265 / libx265, preset slow, Main Profile,
 AAC 96k, 48000 Hz, 双声道, MP4 + faststart
 ```
 
-H.265 Small File 目标视频码率：
+H.265 Production / Small File / Smart Auto 目标视频码率：
 
 ```text
 1920x1080 横屏：Simple 450k / Standard 800k / Complex 1200k

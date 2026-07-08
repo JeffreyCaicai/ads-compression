@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from encoder import build_output_path, build_ffmpeg_args
 from models import VideoInfo
 from settings import (
+    MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMART_AUTO,
     MODE_HIGH_MOTION,
@@ -184,6 +185,44 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-b:v") + 1], "1800k")
         self.assertEqual(args[args.index("-maxrate") + 1], "2700k")
         self.assertEqual(args[args.index("-bufsize") + 1], "5400k")
+
+    def test_h265_production_best_detail_args_use_complex_target_bitrate(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "best-detail.mp4"
+            output = temp_path / "out.mp4"
+            info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+
+            args = build_ffmpeg_args(
+                Path("ffmpeg.exe"),
+                source,
+                output,
+                overwrite=True,
+                encoding_mode=MODE_H265_PRODUCTION_BEST_DETAIL,
+                source_info=info,
+            )
+
+        self.assertEqual(args[args.index("-c:v") + 1], "libx265")
+        self.assertEqual(args[args.index("-profile:v") + 1], "main")
+        self.assertEqual(args[args.index("-tag:v") + 1], "hvc1")
+        self.assertEqual(args[args.index("-r") + 1], "25")
+        self.assertEqual(args[args.index("-b:v") + 1], "1800k")
+        self.assertEqual(args[args.index("-maxrate") + 1], "2700k")
+        self.assertEqual(args[args.index("-bufsize") + 1], "5400k")
+        self.assertEqual(
+            args[args.index("-x265-params") + 1],
+            "keyint=250:min-keyint=25:scenecut=40",
+        )
 
 
 if __name__ == "__main__":

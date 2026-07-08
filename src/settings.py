@@ -36,18 +36,21 @@ MODE_SCREEN_SAFE_HIGH_MOTION = "screen_safe_high_motion"
 MODE_H265_SMALL_FILE_SIMPLE = "h265_small_file_simple"
 MODE_H265_SMALL_FILE = "h265_small_file"
 MODE_H265_SMALL_FILE_COMPLEX = "h265_small_file_complex"
+MODE_H265_PRODUCTION_BEST_DETAIL = "h265_production_best_detail"
 MODE_H265_SMART_AUTO = "h265_smart_auto"
 DEFAULT_ENCODING_MODE = MODE_STANDARD
 H265_ENCODING_MODES = (
     MODE_H265_SMALL_FILE_SIMPLE,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMALL_FILE_COMPLEX,
+    MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_SMART_AUTO,
 )
 SUPPORTED_ENCODING_MODES = (
     MODE_STANDARD,
     MODE_HIGH_MOTION,
     MODE_SCREEN_SAFE_HIGH_MOTION,
+    MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_SMART_AUTO,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMALL_FILE_COMPLEX,
@@ -57,6 +60,7 @@ SUPPORTED_ENCODING_MODES = (
 CONTENT_SIMPLE = "simple"
 CONTENT_STANDARD = "standard"
 CONTENT_COMPLEX = "complex"
+CONTENT_PRODUCTION_BEST_DETAIL = "production_best_detail"
 
 H265_TARGET_FPS = 25.0
 H265_GOP = "250"
@@ -67,6 +71,7 @@ H265_COMPLEXITY_BY_MODE = {
     MODE_H265_SMALL_FILE_SIMPLE: CONTENT_SIMPLE,
     MODE_H265_SMALL_FILE: CONTENT_STANDARD,
     MODE_H265_SMALL_FILE_COMPLEX: CONTENT_COMPLEX,
+    MODE_H265_PRODUCTION_BEST_DETAIL: CONTENT_COMPLEX,
     MODE_H265_SMART_AUTO: CONTENT_STANDARD,
 }
 
@@ -148,6 +153,15 @@ ENCODING_PRESETS = {
     },
     MODE_H265_SMALL_FILE_COMPLEX: {
         "suffix": "_h265_smallfile_complex_aac96",
+        "crf": "",
+        "preset": "slow",
+        "profile": "main",
+        "codec": "libx265",
+        "fps": "25",
+        "rate_control": "target_bitrate",
+    },
+    MODE_H265_PRODUCTION_BEST_DETAIL: {
+        "suffix": "_h265_production_best_detail_aac96",
         "crf": "",
         "preset": "slow",
         "profile": "main",
