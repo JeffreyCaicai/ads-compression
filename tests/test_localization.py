@@ -9,6 +9,7 @@ from localization import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, Localizer, norma
 from settings import (
     MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+    MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMART_AUTO,
     MODE_SCREEN_SAFE_HIGH_MOTION,
@@ -59,6 +60,14 @@ class LocalizationTests(unittest.TestCase):
         localizer = Localizer("en_US")
 
         self.assertEqual(localizer.language_name("id_ID"), "Bahasa Indonesia")
+
+    def test_auto_detail_mode_has_default_english_label(self):
+        localizer = Localizer("en_US")
+
+        self.assertEqual(
+            localizer.t("encoding_mode.h265_production_auto_detail_2pass"),
+            "H.265 Production - Auto Detail (2-pass)",
+        )
 
 
 if __name__ == "__main__":

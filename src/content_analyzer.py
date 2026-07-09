@@ -18,6 +18,10 @@ SAMPLE_WIDTH = 160
 SAMPLE_HEIGHT = 90
 SAMPLE_FPS = 2
 SAMPLE_MAX_SECONDS = 30.0
+PRODUCTION_SAMPLE_WIDTH = 320
+PRODUCTION_SAMPLE_HEIGHT = 180
+PRODUCTION_SAMPLE_FPS = 2
+PRODUCTION_SAMPLE_MAX_SECONDS = 30.0
 SAMPLE_TIMEOUT_SECONDS = 120
 
 
@@ -34,6 +38,15 @@ class ContentAnalysis:
     scene_change_rate: float
     sampled_frames: int
     target_video_bitrate_kbps: int
+
+
+@dataclass
+class ProductionDetailAnalysis:
+    peak_complexity_score: float
+    small_detail_score: float
+    peak_motion_score: float
+    scene_change_rate: float
+    sampled_frames: int
 
 
 def build_sample_args(ffmpeg_path: Path, input_path: Path, duration_sec: float) -> list[str]:
@@ -64,6 +77,37 @@ def build_sample_args(ffmpeg_path: Path, input_path: Path, duration_sec: float) 
     ]
 
 
+def build_production_detail_sample_args(ffmpeg_path: Path, input_path: Path, duration_sec: float) -> list[str]:
+    sample_seconds = max(
+        1.0,
+        min(duration_sec or PRODUCTION_SAMPLE_MAX_SECONDS, PRODUCTION_SAMPLE_MAX_SECONDS),
+    )
+    return [
+        str(ffmpeg_path),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(input_path),
+        "-t",
+        f"{sample_seconds:.3f}",
+        "-an",
+        "-vf",
+        (
+            f"fps={PRODUCTION_SAMPLE_FPS},"
+            f"scale={PRODUCTION_SAMPLE_WIDTH}:{PRODUCTION_SAMPLE_HEIGHT}:"
+            "force_original_aspect_ratio=decrease:flags=fast_bilinear,"
+            f"pad={PRODUCTION_SAMPLE_WIDTH}:{PRODUCTION_SAMPLE_HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+            "format=gray"
+        ),
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "gray",
+        "pipe:1",
+    ]
+
+
 def analyze_content(
     ffmpeg_path: Path,
     input_path: Path,
@@ -83,6 +127,27 @@ def analyze_content(
         stderr = completed.stderr.decode("utf-8", errors="replace").strip()
         raise ContentAnalysisError(stderr or f"FFmpeg analysis failed with code {completed.returncode}.")
     return analyze_raw_frames(completed.stdout, source_width=source_width, source_height=source_height)
+
+
+def analyze_production_detail(
+    ffmpeg_path: Path,
+    input_path: Path,
+    duration_sec: float,
+) -> ProductionDetailAnalysis:
+    args = build_production_detail_sample_args(ffmpeg_path, input_path, duration_sec)
+    completed = subprocess.run(
+        args,
+        capture_output=True,
+        startupinfo=startupinfo_for_windows(),
+        timeout=SAMPLE_TIMEOUT_SECONDS,
+        check=False,
+    )
+    if completed.returncode != 0:
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise ContentAnalysisError(
+            stderr or f"FFmpeg production detail analysis failed with code {completed.returncode}."
+        )
+    return analyze_production_detail_raw_frames(completed.stdout)
 
 
 def analyze_raw_frames(
@@ -122,6 +187,39 @@ def analyze_raw_frames(
         scene_change_rate=round(scene_change_rate, 3),
         sampled_frames=frame_count,
         target_video_bitrate_kbps=target,
+    )
+
+
+def analyze_production_detail_raw_frames(raw_video: bytes) -> ProductionDetailAnalysis:
+    frame_size = PRODUCTION_SAMPLE_WIDTH * PRODUCTION_SAMPLE_HEIGHT
+    if len(raw_video) < frame_size:
+        raise ContentAnalysisError("No production detail frames were decoded.")
+
+    frame_count = len(raw_video) // frame_size
+    frames = [
+        raw_video[index * frame_size : (index + 1) * frame_size]
+        for index in range(frame_count)
+    ]
+    spatial_values = [_production_spatial_complexity(frame) for frame in frames]
+    small_detail_values = [_small_detail_density(frame) for frame in frames]
+    motion_values = [
+        _production_motion_complexity(previous, current)
+        for previous, current in zip(frames, frames[1:])
+    ]
+
+    peak_complexity = max(spatial_values or [0.0])
+    small_detail = max(small_detail_values or [0.0])
+    peak_motion = max(motion_values or [0.0])
+    scene_changes = sum(1 for value in motion_values if value >= 45.0)
+    sample_duration = max(frame_count / PRODUCTION_SAMPLE_FPS, 0.001)
+    scene_change_rate = scene_changes / sample_duration
+
+    return ProductionDetailAnalysis(
+        peak_complexity_score=round(min(100.0, peak_complexity), 1),
+        small_detail_score=round(min(100.0, small_detail), 1),
+        peak_motion_score=round(min(100.0, peak_motion), 1),
+        scene_change_rate=round(scene_change_rate, 3),
+        sampled_frames=frame_count,
     )
 
 
@@ -166,3 +264,60 @@ def _motion_complexity(previous: bytes, current: bytes) -> float:
     pair_count = min(len(previous), len(current))
     diff = sum(abs(current[index] - previous[index]) for index in range(pair_count)) / pair_count
     return min(100.0, diff / 2.55)
+
+
+def _production_spatial_complexity(frame: bytes) -> float:
+    return _spatial_complexity_with_width(frame, PRODUCTION_SAMPLE_WIDTH)
+
+
+def _production_motion_complexity(previous: bytes, current: bytes) -> float:
+    return _motion_complexity(previous, current)
+
+
+def _small_detail_density(frame: bytes) -> float:
+    if not frame:
+        return 0.0
+    edge_hits = 0
+    checks = 0
+    for y in range(1, PRODUCTION_SAMPLE_HEIGHT):
+        row_start = y * PRODUCTION_SAMPLE_WIDTH
+        prev_row_start = (y - 1) * PRODUCTION_SAMPLE_WIDTH
+        for x in range(1, PRODUCTION_SAMPLE_WIDTH):
+            pixel = frame[row_start + x]
+            left = frame[row_start + x - 1]
+            up = frame[prev_row_start + x]
+            local_edge = max(abs(pixel - left), abs(pixel - up))
+            if local_edge >= 40:
+                edge_hits += 1
+            checks += 1
+    return min(100.0, edge_hits / max(checks, 1) * 180.0)
+
+
+def _edge_score(frame: bytes, width: int) -> float:
+    count = len(frame)
+    if count == 0:
+        return 0.0
+    horizontal_total = 0
+    horizontal_count = 0
+    for row_start in range(0, count, width):
+        row = frame[row_start : row_start + width]
+        horizontal_total += sum(abs(row[i] - row[i - 1]) for i in range(1, len(row)))
+        horizontal_count += max(len(row) - 1, 0)
+    vertical_total = 0
+    vertical_count = 0
+    for offset in range(width, count):
+        vertical_total += abs(frame[offset] - frame[offset - width])
+        vertical_count += 1
+    edge_average = (horizontal_total + vertical_total) / max(horizontal_count + vertical_count, 1)
+    return min(100.0, edge_average / 2.55)
+
+
+def _spatial_complexity_with_width(frame: bytes, width: int) -> float:
+    count = len(frame)
+    if count == 0:
+        return 0.0
+    mean = sum(frame) / count
+    variance = sum((pixel - mean) ** 2 for pixel in frame) / count
+    stdev_score = (variance ** 0.5) / 2.55
+    edge_score = _edge_score(frame, width)
+    return min(100.0, stdev_score * 0.6 + edge_score * 1.4)

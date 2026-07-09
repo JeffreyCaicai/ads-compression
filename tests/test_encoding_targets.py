@@ -12,16 +12,26 @@ from settings import (
     COMMON_SCREEN_RESOLUTIONS,
     MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+    MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS,
     MODE_H265_SMALL_FILE,
     MODE_H265_SMALL_FILE_COMPLEX,
     MODE_H265_SMALL_FILE_SIMPLE,
+    PROFILE_BEST_DETAIL_2PASS,
+    PROFILE_MAXIMUM_DETAIL_2PASS,
     SUPPORTED_ENCODING_MODES,
+    H265_ENCODING_MODES,
+    is_h265_auto_detail_mode,
     is_h265_two_pass_mode,
+    maximum_detail_target_video_bitrate_kbps,
     target_video_bitrate_kbps,
 )
 
 
 class EncodingTargetTests(unittest.TestCase):
+    def test_auto_detail_profile_constants_are_defined_in_settings(self):
+        self.assertEqual(PROFILE_BEST_DETAIL_2PASS, "best_detail_2pass")
+        self.assertEqual(PROFILE_MAXIMUM_DETAIL_2PASS, "maximum_detail_2pass")
+
     def test_h265_target_bitrate_uses_screen_size_and_content_complexity(self):
         self.assertEqual(target_video_bitrate_kbps(1920, 1080, MODE_H265_SMALL_FILE_SIMPLE), 450)
         self.assertEqual(target_video_bitrate_kbps(1080, 1920, MODE_H265_SMALL_FILE), 1300)
@@ -39,6 +49,18 @@ class EncodingTargetTests(unittest.TestCase):
         self.assertEqual(target_video_bitrate_kbps(1920, 1080, MODE_H265_PRODUCTION_BEST_DETAIL_2PASS), 1200)
         self.assertEqual(target_video_bitrate_kbps(1080, 1920, MODE_H265_PRODUCTION_BEST_DETAIL_2PASS), 1800)
         self.assertEqual(target_video_bitrate_kbps(1080, 2560, MODE_H265_PRODUCTION_BEST_DETAIL_2PASS), 2200)
+
+    def test_h265_auto_detail_mode_is_supported_and_two_pass(self):
+        self.assertIn(MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS, SUPPORTED_ENCODING_MODES)
+        self.assertIn(MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS, H265_ENCODING_MODES)
+        self.assertTrue(is_h265_auto_detail_mode(MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS))
+        self.assertTrue(is_h265_two_pass_mode(MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS))
+
+    def test_maximum_detail_target_bitrates_use_screen_size(self):
+        self.assertEqual(maximum_detail_target_video_bitrate_kbps(1920, 1080), 2000)
+        self.assertEqual(maximum_detail_target_video_bitrate_kbps(1080, 1920), 2600)
+        self.assertEqual(maximum_detail_target_video_bitrate_kbps(1920, 1440), 3200)
+        self.assertEqual(maximum_detail_target_video_bitrate_kbps(1080, 2560), 3200)
 
     def test_h265_output_validation_accepts_hevc_25fps_outputs(self):
         with tempfile.TemporaryDirectory() as temp_dir:

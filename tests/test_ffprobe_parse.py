@@ -71,6 +71,35 @@ class FFprobeParseTests(unittest.TestCase):
         self.assertIsNone(info.audio_codec)
         self.assertEqual(info.duration_sec, 3.5)
 
+    def test_parse_ffprobe_json_extracts_stream_and_format_bitrates(self):
+        payload = {
+            "format": {"duration": "15.0", "bit_rate": "12000000"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "hevc",
+                    "width": 1920,
+                    "height": 1440,
+                    "avg_frame_rate": "30/1",
+                    "bit_rate": "11759000",
+                    "pix_fmt": "yuv420p",
+                },
+                {
+                    "codec_type": "audio",
+                    "codec_name": "aac",
+                    "sample_rate": "48000",
+                    "channels": 2,
+                    "bit_rate": "317000",
+                },
+            ],
+        }
+
+        info = parse_ffprobe_json(payload)
+
+        self.assertEqual(info.video_bit_rate_kbps, 11759)
+        self.assertEqual(info.audio_bit_rate_kbps, 317)
+        self.assertEqual(info.format_bit_rate_kbps, 12000)
+
     def test_find_ffmpeg_paths_supports_pyinstaller_internal_data_dir(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             app_dir = (Path(temp_dir) / "SignageVideoCompressor").resolve()

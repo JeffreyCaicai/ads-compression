@@ -416,6 +416,7 @@ If the output folder is the same as the source folder and the source file is alr
    - Screen Safe - High Motion: use when the compressed file plays well on a computer but the signage screen shows blocks, glitches, or frame corruption during the first second;
    - H.265 Production - Best Detail: recommended for official ad delivery on new screens that support H.265. It always uses the Complex target bitrate and prioritizes detail retention;
    - H.265 Production - Best Detail (2-pass): recommended for important official ads or material that needs stronger detail retention. It analyzes once and then writes the final output, so bitrate allocation is better but encoding time is usually close to twice as long;
+   - H.265 Production - Auto Detail (2-pass): recommended for mixed production batches. The tool analyzes each source and automatically chooses normal Best Detail (2-pass) or Maximum Detail (2-pass). This is the safest choice when operators process many videos and cannot inspect each one manually;
    - H.265 Smart Auto - Analyze Content: recommended for traffic-saving work on new screens that support H.265. The app samples the video, estimates complexity, and chooses the target bitrate automatically;
    - H.265 Small File modes: use only when the operator wants to manually choose Simple, Standard, or Complex content.
 5. Click “Start Compression”.
@@ -583,6 +584,12 @@ HEVC / libx265, preset slow, Main Profile,
 first pass analyzes video, second pass writes final MP4,
 always uses the Complex target bitrate,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Production - Auto Detail (2-pass):
+HEVC / libx265, preset slow, Main Profile,
+automatically chooses best_detail_2pass or maximum_detail_2pass,
+best_detail_2pass uses the existing Best Detail (2-pass) parameters,
+maximum_detail_2pass uses 2000k / 2600k / 3200k target video bitrate, prefers to keep 30fps for 30fps sources, GOP 60, maxrate=target*2, bufsize=target*4, and enables rc-lookahead=50, aq-mode=3, psy-rd=2.0 for extra detail protection.
 
 H.265 Smart Auto - Analyze Content:
 HEVC / libx265, preset slow, Main Profile,

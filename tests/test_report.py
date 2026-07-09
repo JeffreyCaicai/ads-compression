@@ -283,6 +283,176 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["content_complexity"], "production_best_detail")
         self.assertEqual(rows[0]["content_complexity_score"], "")
 
+    def test_write_report_records_auto_detail_decision_fields(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "source.mp4"
+            output = temp_path / "out.mp4"
+            source_info = VideoInfo(
+                width=1920,
+                height=1440,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                video_bit_rate_kbps=11759,
+            )
+            job = VideoJob(
+                input_path=source,
+                output_path=output,
+                info=source_info,
+                audio_status="normal",
+                status="success",
+                original_size_bytes=22_839_430,
+                output_size_bytes=6_200_000,
+                encoding_mode="h265_production_auto_detail_2pass",
+                target_video_bitrate_kbps=3200,
+                target_fps=30.0,
+                target_gop=60,
+                auto_selected_profile="maximum_detail_2pass",
+                auto_risk_score=82.0,
+                auto_risk_reasons="high_pixel_screen;source_bitrate_11759k;fps_30",
+                source_video_bitrate_kbps=11759,
+                source_fps=30.0,
+                peak_complexity_score=81.5,
+                small_detail_score=70.0,
+                peak_motion_score=48.0,
+                scene_change_rate=0.4,
+            )
+            result = CompressionResult(
+                job=job,
+                status="success",
+                output_info=source_info,
+                created_at="2026-07-09T10:00:00",
+            )
+
+            report_path = write_report(temp_path, [result])
+
+            with report_path.open("r", encoding="utf-8-sig", newline="") as file_obj:
+                rows = list(csv.DictReader(file_obj))
+
+        self.assertEqual(rows[0]["auto_selected_profile"], "maximum_detail_2pass")
+        self.assertEqual(rows[0]["auto_risk_score"], "82")
+        self.assertEqual(rows[0]["auto_risk_reasons"], "high_pixel_screen;source_bitrate_11759k;fps_30")
+        self.assertEqual(rows[0]["source_video_bitrate_kbps"], "11759")
+        self.assertEqual(rows[0]["source_fps"], "30")
+        self.assertEqual(rows[0]["peak_complexity_score"], "81.5")
+        self.assertEqual(rows[0]["small_detail_score"], "70")
+        self.assertEqual(rows[0]["peak_motion_score"], "48")
+        self.assertEqual(rows[0]["scene_change_rate"], "0.4")
+        self.assertEqual(rows[0]["target_fps"], "30")
+        self.assertEqual(rows[0]["target_gop"], "60")
+
+    def test_write_report_keeps_zero_auto_detail_scores_for_auto_mode(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "source.mp4"
+            output = temp_path / "out.mp4"
+            source_info = VideoInfo(
+                width=1920,
+                height=1080,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+            job = VideoJob(
+                input_path=source,
+                output_path=output,
+                info=source_info,
+                audio_status="normal",
+                status="success",
+                original_size_bytes=22_839_430,
+                output_size_bytes=6_200_000,
+                encoding_mode="h265_production_auto_detail_2pass",
+                target_video_bitrate_kbps=1800,
+                target_fps=25.0,
+                target_gop=50,
+                auto_selected_profile="best_detail_2pass",
+                auto_risk_score=0.0,
+                auto_risk_reasons="analysis_failed:probe timeout",
+                source_fps=25.0,
+                peak_complexity_score=0.0,
+                small_detail_score=0.0,
+                peak_motion_score=0.0,
+                scene_change_rate=0.0,
+            )
+            result = CompressionResult(
+                job=job,
+                status="success",
+                output_info=source_info,
+                created_at="2026-07-09T10:00:00",
+            )
+
+            report_path = write_report(temp_path, [result])
+
+            with report_path.open("r", encoding="utf-8-sig", newline="") as file_obj:
+                rows = list(csv.DictReader(file_obj))
+
+        self.assertEqual(rows[0]["auto_risk_score"], "0")
+        self.assertEqual(rows[0]["peak_complexity_score"], "0")
+        self.assertEqual(rows[0]["small_detail_score"], "0")
+        self.assertEqual(rows[0]["peak_motion_score"], "0")
+        self.assertEqual(rows[0]["scene_change_rate"], "0")
+
+    def test_write_report_leaves_preanalysis_auto_detail_metrics_blank(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "source.mp4"
+            output = temp_path / "out.mp4"
+            source_info = VideoInfo(
+                width=1920,
+                height=1080,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec=None,
+                audio_sample_rate=None,
+                audio_channels=None,
+                has_audio=False,
+            )
+            job = VideoJob(
+                input_path=source,
+                output_path=output,
+                info=source_info,
+                audio_status="failed",
+                status="failed",
+                error_message="probe failed before analysis",
+                original_size_bytes=22_839_430,
+                output_size_bytes=0,
+                encoding_mode="h265_production_auto_detail_2pass",
+                target_video_bitrate_kbps=1800,
+                target_fps=25.0,
+                target_gop=50,
+            )
+            result = CompressionResult(
+                job=job,
+                status="failed",
+                error_message="probe failed before analysis",
+                created_at="2026-07-09T10:00:00",
+            )
+
+            report_path = write_report(temp_path, [result])
+
+            with report_path.open("r", encoding="utf-8-sig", newline="") as file_obj:
+                rows = list(csv.DictReader(file_obj))
+
+        self.assertEqual(rows[0]["auto_selected_profile"], "")
+        self.assertEqual(rows[0]["auto_risk_score"], "")
+        self.assertEqual(rows[0]["auto_risk_reasons"], "")
+        self.assertEqual(rows[0]["source_video_bitrate_kbps"], "")
+        self.assertEqual(rows[0]["source_fps"], "")
+        self.assertEqual(rows[0]["peak_complexity_score"], "")
+        self.assertEqual(rows[0]["small_detail_score"], "")
+        self.assertEqual(rows[0]["peak_motion_score"], "")
+        self.assertEqual(rows[0]["scene_change_rate"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

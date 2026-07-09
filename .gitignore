@@ -10,3 +10,4 @@ dist/
 logs/*.log
 tools/ffmpeg/bin/ffmpeg.exe
 tools/ffmpeg/bin/ffprobe.exe
+.superpowers/

@@ -416,6 +416,7 @@ Car Ad_3.mp4
    - Screen Safe - High Motion：压缩文件在电脑播放正常，但广告屏开头约 1 秒出现花屏、块状异常或局部错位时使用；
    - H.265 Production - Best Detail：推荐给支持 H.265 的新屏正式广告投放使用，固定使用 Complex 目标码率，优先保留细节；
    - H.265 Production - Best Detail (2-pass)：推荐给重点正式投放或细节要求更高的素材使用。它会先分析一遍再正式输出，码率分配更好，但耗时通常接近两倍；
+   - H.265 Production - Auto Detail (2-pass)：推荐用于混合素材批量正式投放。程序会自动分析每个源视频，并在普通 Best Detail (2-pass) 和 Maximum Detail (2-pass) 之间选择。适合一次性转换大量视频，减少人工逐条查看和选错模式；
    - H.265 Smart Auto - Analyze Content：推荐给支持 H.265 的新屏省流量使用。程序会抽样分析视频复杂度，并自动选择目标码率；
    - H.265 Small File 手动模式：只有在操作员明确要手动选择 Simple、Standard 或 Complex 时使用。
 5. 点击“开始压缩”。
@@ -583,6 +584,12 @@ HEVC / libx265, preset slow, Main Profile,
 第一遍分析视频，第二遍正式输出 MP4,
 固定使用 Complex 目标码率,
 AAC 96k, 48000 Hz, 2 channels, MP4 faststart
+
+H.265 Production - Auto Detail (2-pass):
+HEVC / libx265, preset slow, Main Profile,
+自动选择 best_detail_2pass 或 maximum_detail_2pass，
+best_detail_2pass 使用现有 Best Detail (2-pass) 参数，
+maximum_detail_2pass 使用 2000k / 2600k / 3200k 目标视频码率，30fps 源优先保留 30fps，GOP 60，maxrate=target*2，bufsize=target*4，并启用 rc-lookahead=50、aq-mode=3、psy-rd=2.0 等细节保护参数。
 
 H.265 Smart Auto - Analyze Content:
 HEVC / libx265, preset slow, Main Profile,

@@ -10,6 +10,7 @@ from settings import (
     MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     encoding_preset,
+    is_h265_auto_detail_mode,
     is_h265_mode,
     target_fps_for_mode,
     target_video_bitrate_kbps,
@@ -38,6 +39,16 @@ REPORT_FIELDS = [
     "target_fps",
     "content_complexity",
     "content_complexity_score",
+    "auto_selected_profile",
+    "auto_risk_score",
+    "auto_risk_reasons",
+    "source_video_bitrate_kbps",
+    "source_fps",
+    "peak_complexity_score",
+    "small_detail_score",
+    "peak_motion_score",
+    "scene_change_rate",
+    "target_gop",
     "created_at",
 ]
 
@@ -57,6 +68,9 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
     source_info = job.info
     output_info = result.output_info
     preset = encoding_preset(job.encoding_mode)
+    has_auto_detail_audit = is_h265_auto_detail_mode(job.encoding_mode) and bool(
+        job.auto_selected_profile or job.auto_risk_reasons or job.h265_encode_plan
+    )
     target_bitrate = ""
     if job.target_video_bitrate_kbps:
         target_bitrate = str(job.target_video_bitrate_kbps)
@@ -68,6 +82,7 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
         MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     }:
         content_complexity = CONTENT_PRODUCTION_BEST_DETAIL
+    target_fps = job.target_fps if job.target_fps else target_fps_for_mode(job.encoding_mode)
     return {
         "source_file": str(job.input_path),
         "output_file": str(job.output_path),
@@ -87,11 +102,27 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
         "crf": preset["crf"],
         "preset": preset["preset"],
         "target_video_bitrate_kbps": target_bitrate,
-        "target_fps": format_number(target_fps_for_mode(job.encoding_mode)),
+        "target_fps": format_number(target_fps),
         "content_complexity": content_complexity,
         "content_complexity_score": format_number(job.content_complexity_score) if job.content_complexity_score else "",
+        "auto_selected_profile": job.auto_selected_profile,
+        "auto_risk_score": format_auto_detail_number(job, job.auto_risk_score, has_auto_detail_audit),
+        "auto_risk_reasons": job.auto_risk_reasons,
+        "source_video_bitrate_kbps": str(job.source_video_bitrate_kbps) if job.source_video_bitrate_kbps else "",
+        "source_fps": format_number(job.source_fps) if job.source_fps else "",
+        "peak_complexity_score": format_auto_detail_number(job, job.peak_complexity_score, has_auto_detail_audit),
+        "small_detail_score": format_auto_detail_number(job, job.small_detail_score, has_auto_detail_audit),
+        "peak_motion_score": format_auto_detail_number(job, job.peak_motion_score, has_auto_detail_audit),
+        "scene_change_rate": format_auto_detail_number(job, job.scene_change_rate, has_auto_detail_audit),
+        "target_gop": str(job.target_gop) if job.target_gop else "",
         "created_at": result.created_at or datetime.now().isoformat(timespec="seconds"),
     }
+
+
+def format_auto_detail_number(job: VideoJob, value: float | None, has_auto_detail_audit: bool) -> str:
+    if not has_auto_detail_audit or value is None:
+        return ""
+    return format_number(value)
 
 
 def format_number(value: float) -> str:

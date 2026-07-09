@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from encoder import build_output_path, build_ffmpeg_args, build_ffmpeg_passlog_path, build_ffmpeg_two_pass_args
-from models import VideoInfo
+from models import H265EncodePlan, VideoInfo
 from settings import (
     MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
@@ -16,6 +16,7 @@ from settings import (
     MODE_HIGH_MOTION,
     MODE_SCREEN_SAFE_HIGH_MOTION,
     MODE_STANDARD,
+    PROFILE_MAXIMUM_DETAIL_2PASS,
 )
 
 
@@ -316,6 +317,64 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-movflags") + 1], "+faststart")
         self.assertEqual(args[args.index("-progress") + 1], "pipe:1")
         self.assertEqual(args[-1], str(output))
+
+    def test_h265_two_pass_args_use_encode_plan_overrides_for_maximum_detail(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            source = temp_path / "best-detail.mp4"
+            output = temp_path / "out.mp4"
+            passlog = temp_path / ".out_x265_2pass"
+            info = VideoInfo(
+                width=1920,
+                height=1440,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+            plan = H265EncodePlan(
+                selected_profile=PROFILE_MAXIMUM_DETAIL_2PASS,
+                target_video_bitrate_kbps=3200,
+                target_fps=30.0,
+                gop=60,
+                keyint_min=30,
+                scenecut=40,
+                maxrate_kbps=6400,
+                bufsize_kbps=12800,
+                x265_params=(
+                    "rc-lookahead=50",
+                    "aq-mode=3",
+                    "aq-strength=1.0",
+                    "psy-rd=2.0",
+                    "psy-rdoq=1.0",
+                ),
+            )
+
+            args = build_ffmpeg_two_pass_args(
+                Path("ffmpeg.exe"),
+                source,
+                output,
+                pass_number=2,
+                passlog_path=passlog,
+                overwrite=True,
+                encoding_mode=MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+                source_info=info,
+                encode_plan=plan,
+            )
+
+        self.assertEqual(args[args.index("-b:v") + 1], "3200k")
+        self.assertEqual(args[args.index("-r") + 1], "30")
+        self.assertEqual(args[args.index("-maxrate") + 1], "6400k")
+        self.assertEqual(args[args.index("-bufsize") + 1], "12800k")
+        params = args[args.index("-x265-params") + 1]
+        self.assertIn("keyint=60", params)
+        self.assertIn("min-keyint=30", params)
+        self.assertIn("scenecut=40", params)
+        self.assertIn("aq-mode=3", params)
+        self.assertIn("psy-rd=2.0", params)
 
     def test_h265_two_pass_args_reject_invalid_pass_number(self):
         with tempfile.TemporaryDirectory() as temp_dir:
