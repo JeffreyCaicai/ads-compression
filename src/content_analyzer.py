@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import subprocess
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,9 +25,15 @@ PRODUCTION_SAMPLE_HEIGHT = 180
 PRODUCTION_SAMPLE_FPS = 2
 PRODUCTION_SAMPLE_MAX_SECONDS = 30.0
 SAMPLE_TIMEOUT_SECONDS = 120
+PROCESS_POLL_INTERVAL_SECONDS = 0.1
+PROCESS_TERMINATE_TIMEOUT_SECONDS = 5
 
 
 class ContentAnalysisError(RuntimeError):
+    pass
+
+
+class AnalysisCancelled(ContentAnalysisError):
     pass
 
 
@@ -179,6 +187,7 @@ def analyze_production_detail(
     source_width: int,
     source_height: int,
     duration_sec: float,
+    cancel_event: threading.Event | None = None,
 ) -> ProductionDetailAnalysis:
     raw_segments = []
     segment_frame_counts = []
@@ -188,26 +197,52 @@ def analyze_production_detail(
         args = build_production_detail_sample_args(
             ffmpeg_path, input_path, source_width, source_height, segment
         )
-        completed = subprocess.run(
-            args,
-            capture_output=True,
-            startupinfo=startupinfo_for_windows(),
-            timeout=SAMPLE_TIMEOUT_SECONDS,
-            check=False,
-        )
-        if completed.returncode != 0:
-            stderr = completed.stderr.decode("utf-8", errors="replace").strip()
-            raise ContentAnalysisError(
-                stderr or f"FFmpeg production detail analysis failed with code {completed.returncode}."
-            )
-        raw_segments.append(completed.stdout)
-        segment_frame_counts.append(len(completed.stdout) // frame_size)
+        raw_video = _run_rawvideo_process(args, cancel_event)
+        raw_segments.append(raw_video)
+        segment_frame_counts.append(len(raw_video) // frame_size)
     return analyze_production_detail_raw_frames(
         b"".join(raw_segments),
         width=sample_width,
         height=sample_height,
         segment_frame_counts=tuple(segment_frame_counts),
     )
+
+
+def _run_rawvideo_process(args: list[str], cancel_event: threading.Event | None) -> bytes:
+    process = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        startupinfo=startupinfo_for_windows(),
+    )
+    started_at = time.monotonic()
+    while True:
+        try:
+            stdout, stderr = process.communicate(timeout=PROCESS_POLL_INTERVAL_SECONDS)
+            break
+        except subprocess.TimeoutExpired:
+            if cancel_event is not None and cancel_event.is_set():
+                _terminate_rawvideo_process(process)
+                raise AnalysisCancelled("Production detail analysis cancelled.")
+            if time.monotonic() - started_at >= SAMPLE_TIMEOUT_SECONDS:
+                _terminate_rawvideo_process(process)
+                raise subprocess.TimeoutExpired(args, SAMPLE_TIMEOUT_SECONDS)
+
+    if process.returncode != 0:
+        error_message = stderr.decode("utf-8", errors="replace").strip()
+        raise ContentAnalysisError(
+            error_message or f"FFmpeg production detail analysis failed with code {process.returncode}."
+        )
+    return stdout
+
+
+def _terminate_rawvideo_process(process: subprocess.Popen[bytes]) -> None:
+    process.terminate()
+    try:
+        process.communicate(timeout=PROCESS_TERMINATE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.communicate()
 
 
 def analyze_raw_frames(

@@ -1,11 +1,17 @@
+import subprocess
 import sys
+import threading
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import content_analyzer
+
 from content_analyzer import (
+    AnalysisCancelled,
     PRODUCTION_SAMPLE_FPS,
     PRODUCTION_SAMPLE_HEIGHT,
     PRODUCTION_SAMPLE_WIDTH,
@@ -14,6 +20,8 @@ from content_analyzer import (
     SAMPLE_HEIGHT,
     SAMPLE_WIDTH,
     _clustered_detail_score,
+    _run_rawvideo_process,
+    analyze_production_detail,
     analyze_production_detail_raw_frames,
     analyze_raw_frames,
     build_production_detail_sample_args,
@@ -100,7 +108,56 @@ def sparse_noise_frame(width: int, height: int, matching_edge_count: bool = True
     return detail_tile_frame(width, height, {(0, 0), (0, 7), (7, 0), (7, 7)})
 
 
+def fake_running_process() -> Mock:
+    process = Mock()
+    process.poll.return_value = None
+    process.returncode = -15
+
+    def terminate() -> None:
+        process.poll.return_value = -15
+
+    process.terminate.side_effect = terminate
+    process.communicate.side_effect = [
+        subprocess.TimeoutExpired(["ffmpeg"], 0.1),
+        (b"", b""),
+    ]
+    return process
+
+
 class ContentAnalyzerTests(unittest.TestCase):
+    def test_production_analysis_cancel_terminates_process(self):
+        cancel_event = threading.Event()
+        cancel_event.set()
+
+        with patch("content_analyzer.subprocess.Popen", return_value=fake_running_process()) as popen:
+            with self.assertRaises(AnalysisCancelled):
+                analyze_production_detail(
+                    Path("ffmpeg"), Path("input.mp4"), 1920, 1080, 15.0, cancel_event
+                )
+
+        popen.return_value.terminate.assert_called_once()
+
+    def test_rawvideo_process_times_out_after_sample_timeout(self):
+        process = Mock()
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["ffmpeg"], 0.1),
+            (b"", b""),
+        ]
+
+        with (
+            patch("content_analyzer.subprocess.Popen", return_value=process),
+            patch.object(
+                content_analyzer,
+                "time",
+                Mock(monotonic=Mock(side_effect=[0.0, 121.0])),
+                create=True,
+            ),
+        ):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                _run_rawvideo_process(["ffmpeg"], cancel_event=None)
+
+        process.terminate.assert_called_once()
+
     def test_percentile_uses_linear_interpolation(self):
         self.assertEqual(percentile([0.0, 10.0, 20.0, 30.0], 0.5), 15.0)
 

@@ -11,7 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from auto_detail import AutoDetailDecision, build_best_detail_2pass_plan, choose_auto_detail_plan
 from audio_check import detect_volume
-from content_analyzer import ContentAnalysisError, analyze_content, analyze_production_detail
+from content_analyzer import AnalysisCancelled, ContentAnalysisError, analyze_content, analyze_production_detail
 from encoder import Encoder, build_output_path
 from ffmpeg_utils import (
     FFmpegError,
@@ -392,6 +392,18 @@ class CompressorWindow(tk.Tk):
                 elif is_h265_smart_auto_mode(job.encoding_mode):
                     self._analyze_job_content(job)
 
+                if self.cancel_event.is_set():
+                    self._mark_cancelled(job)
+                    self.ui_queue.put(("job", job))
+                    self.results.append(
+                        CompressionResult(
+                            job=job,
+                            status="cancelled",
+                            error_message=self.localizer.t("message.user_cancelled"),
+                        )
+                    )
+                    continue
+
                 result = self.encoder.encode(
                     job,
                     overwrite=overwrite,
@@ -404,6 +416,16 @@ class CompressorWindow(tk.Tk):
                 self.ui_queue.put(("job", job))
                 if result.status == "failed":
                     self.ui_queue.put(("log", f"{job.input_path.name}: {result.error_message}"))
+            except AnalysisCancelled:
+                self._mark_cancelled(job)
+                self.results.append(
+                    CompressionResult(
+                        job=job,
+                        status="cancelled",
+                        error_message=self.localizer.t("message.user_cancelled"),
+                    )
+                )
+                self.ui_queue.put(("job", job))
             except FFmpegError as exc:
                 job.status = STATUS_FAILED
                 job.error_message = self.localizer.t("error.probe")
@@ -504,6 +526,7 @@ class CompressorWindow(tk.Tk):
                 source_width=job.info.width,
                 source_height=job.info.height,
                 duration_sec=job.info.duration_sec,
+                cancel_event=self.cancel_event,
             )
             decision = choose_auto_detail_plan(job.info, analysis, job.input_path)
             self._apply_auto_detail_decision(job, decision)
@@ -521,6 +544,8 @@ class CompressorWindow(tk.Tk):
                     ),
                 )
             )
+        except AnalysisCancelled:
+            raise
         except (ContentAnalysisError, subprocess.TimeoutExpired, OSError) as exc:
             plan = build_best_detail_2pass_plan(job.info)
             job.h265_encode_plan = plan
