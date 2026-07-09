@@ -74,6 +74,50 @@ class AutoDetailFallbackTests(unittest.TestCase):
         self.assertEqual(job.peak_motion_score, 0.0)
         self.assertEqual(job.scene_change_rate, 0.0)
 
+    def test_auto_detail_analysis_failure_estimates_bitrate_from_file_size_and_audio(self):
+        window = self.make_window()
+        info = self.make_info()
+        info.duration_sec = 10.0
+        info.video_bit_rate_kbps = None
+        info.audio_bit_rate_kbps = 96
+        info.format_bit_rate_kbps = None
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source_path = Path(temporary_directory) / "source.mp4"
+            source_path.write_bytes(b"x" * 150_000)
+            job = VideoJob(
+                input_path=source_path,
+                output_path=Path(temporary_directory) / "out.mp4",
+                info=info,
+                encoding_mode=MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS,
+            )
+
+            with patch("ui_main.analyze_production_detail", side_effect=ContentAnalysisError("sample failed")):
+                window._analyze_job_auto_detail(job)
+
+        self.assertEqual(job.source_video_bitrate_kbps, 24)
+
+    def test_auto_detail_analysis_receives_display_geometry(self):
+        window = self.make_window()
+        info = self.make_info()
+        info.width = 720
+        info.height = 576
+        info.display_width = 1024
+        info.display_height = 576
+        job = VideoJob(
+            input_path=Path("/tmp/anamorphic.mp4"),
+            output_path=Path("/tmp/out.mp4"),
+            info=info,
+            encoding_mode=MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS,
+        )
+        analysis = ProductionDetailAnalysis(0.0, 0.0, 0.0, 0.0, 1)
+
+        with patch("ui_main.analyze_production_detail", return_value=analysis) as analyze:
+            window._analyze_job_auto_detail(job)
+
+        self.assertEqual(analyze.call_args.kwargs["source_width"], 1024)
+        self.assertEqual(analyze.call_args.kwargs["source_height"], 576)
+
     def test_cancelled_auto_detail_analysis_receives_job_geometry_and_skips_encode(self):
         window = self.make_window()
         info = self.make_info()

@@ -133,6 +133,57 @@ def parse_bitrate_kbps(value: Any) -> int | None:
     return round(parsed / 1000)
 
 
+def parse_aspect_ratio(value: Any) -> float:
+    if value is None:
+        return 0.0
+    return parse_fraction(str(value).strip().replace(":", "/"))
+
+
+def parse_rotation_degrees(video_stream: dict[str, Any]) -> int:
+    rotation_values = [
+        side_data.get("rotation")
+        for side_data in video_stream.get("side_data_list") or []
+        if isinstance(side_data, dict)
+    ]
+    tags = video_stream.get("tags") or {}
+    if isinstance(tags, dict):
+        rotation_values.extend((tags.get("rotate"), tags.get("ROTATE")))
+    for value in rotation_values:
+        if value is None:
+            continue
+        try:
+            return int(round(float(value)))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def display_dimensions(
+    width: int,
+    height: int,
+    sample_aspect_ratio: Any,
+    display_aspect_ratio: Any,
+    rotation_degrees: int,
+) -> tuple[int, int]:
+    if width <= 0 or height <= 0:
+        return width, height
+
+    display_width = width
+    display_height = height
+    sample_ratio = parse_aspect_ratio(sample_aspect_ratio)
+    display_ratio = parse_aspect_ratio(display_aspect_ratio)
+    if sample_ratio > 0 and abs(sample_ratio - 1.0) < 1e-6:
+        display_width = width
+    elif display_ratio > 0:
+        display_width = max(1, round(height * display_ratio))
+    elif sample_ratio > 0:
+        display_width = max(1, round(width * sample_ratio))
+
+    if abs(rotation_degrees) % 180 == 90:
+        display_width, display_height = display_height, display_width
+    return display_width, display_height
+
+
 def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
     streams = payload.get("streams") or []
     video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
@@ -144,10 +195,22 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
     duration = parse_float(format_data.get("duration"))
     if duration <= 0:
         duration = parse_float(video_stream.get("duration"))
+    width = int(video_stream.get("width") or 0)
+    height = int(video_stream.get("height") or 0)
+    sample_aspect_ratio = video_stream.get("sample_aspect_ratio")
+    display_aspect_ratio = video_stream.get("display_aspect_ratio")
+    rotation_degrees = parse_rotation_degrees(video_stream)
+    display_width, display_height = display_dimensions(
+        width,
+        height,
+        sample_aspect_ratio,
+        display_aspect_ratio,
+        rotation_degrees,
+    )
 
     return VideoInfo(
-        width=int(video_stream.get("width") or 0),
-        height=int(video_stream.get("height") or 0),
+        width=width,
+        height=height,
         duration_sec=duration,
         fps=parse_video_fps(video_stream),
         video_codec=str(video_stream.get("codec_name") or ""),
@@ -159,6 +222,11 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
         video_bit_rate_kbps=parse_bitrate_kbps(video_stream.get("bit_rate")),
         audio_bit_rate_kbps=parse_bitrate_kbps(audio_stream.get("bit_rate")) if audio_stream else None,
         format_bit_rate_kbps=parse_bitrate_kbps(format_data.get("bit_rate")),
+        sample_aspect_ratio=str(sample_aspect_ratio) if sample_aspect_ratio else None,
+        display_aspect_ratio=str(display_aspect_ratio) if display_aspect_ratio else None,
+        rotation_degrees=rotation_degrees,
+        display_width=display_width,
+        display_height=display_height,
     )
 
 

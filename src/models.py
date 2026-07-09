@@ -22,12 +22,23 @@ class VideoInfo:
     video_bit_rate_kbps: int | None = None
     audio_bit_rate_kbps: int | None = None
     format_bit_rate_kbps: int | None = None
+    sample_aspect_ratio: str | None = None
+    display_aspect_ratio: str | None = None
+    rotation_degrees: int = 0
+    display_width: int | None = None
+    display_height: int | None = None
 
     @property
     def resolution(self) -> str:
         if self.width and self.height:
             return f"{self.width}x{self.height}"
         return ""
+
+    @property
+    def display_dimensions(self) -> tuple[int, int]:
+        width = self.display_width if self.display_width and self.display_width > 0 else self.width
+        height = self.display_height if self.display_height and self.display_height > 0 else self.height
+        return width, height
 
 
 @dataclass(frozen=True)

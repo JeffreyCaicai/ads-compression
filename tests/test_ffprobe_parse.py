@@ -62,6 +62,73 @@ class FFprobeParseTests(unittest.TestCase):
         self.assertEqual(info.audio_channels, 2)
         self.assertIs(info.has_audio, True)
         self.assertEqual(info.pix_fmt, "yuv420p")
+        self.assertEqual(getattr(info, "display_dimensions", None), (1920, 1080))
+
+    def test_parse_ffprobe_json_uses_anamorphic_display_aspect_ratio(self):
+        payload = {
+            "format": {"duration": "10.0"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 720,
+                    "height": 576,
+                    "sample_aspect_ratio": "64:45",
+                    "display_aspect_ratio": "16:9",
+                    "avg_frame_rate": "25/1",
+                }
+            ],
+        }
+
+        info = parse_ffprobe_json(payload)
+
+        self.assertEqual((info.width, info.height), (720, 576))
+        self.assertEqual(getattr(info, "sample_aspect_ratio", None), "64:45")
+        self.assertEqual(getattr(info, "display_aspect_ratio", None), "16:9")
+        self.assertEqual(getattr(info, "display_dimensions", None), (1024, 576))
+
+    def test_parse_ffprobe_json_applies_rotation_to_display_geometry(self):
+        payload = {
+            "format": {"duration": "10.0"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 1920,
+                    "height": 1080,
+                    "sample_aspect_ratio": "1:1",
+                    "display_aspect_ratio": "16:9",
+                    "avg_frame_rate": "30/1",
+                    "side_data_list": [{"side_data_type": "Display Matrix", "rotation": -90}],
+                }
+            ],
+        }
+
+        info = parse_ffprobe_json(payload)
+
+        self.assertEqual((info.width, info.height), (1920, 1080))
+        self.assertEqual(getattr(info, "rotation_degrees", None), -90)
+        self.assertEqual(getattr(info, "display_dimensions", None), (1080, 1920))
+
+    def test_parse_ffprobe_json_preserves_square_pixel_coded_dimensions(self):
+        payload = {
+            "format": {"duration": "10.0"},
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 854,
+                    "height": 480,
+                    "sample_aspect_ratio": "1:1",
+                    "display_aspect_ratio": "16:9",
+                    "avg_frame_rate": "30/1",
+                }
+            ],
+        }
+
+        info = parse_ffprobe_json(payload)
+
+        self.assertEqual(info.display_dimensions, (854, 480))
 
     def test_parse_ffprobe_json_falls_back_when_average_frame_rate_is_zero(self):
         payload = video_payload(avg_frame_rate="0/0", r_frame_rate="30/1")

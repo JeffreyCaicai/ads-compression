@@ -180,6 +180,22 @@ class EncoderTwoPassTests(unittest.TestCase):
 
 
 class AutoDetailQualityRetryTests(unittest.TestCase):
+    def test_quality_check_receives_display_geometry_without_mutating_coded_dimensions(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            job.info.width = 1920
+            job.info.height = 1080
+            job.info.display_width = 1080
+            job.info.display_height = 1920
+
+            with patch("encoder.run_quality_check", return_value=passed_quality()) as quality_check:
+                result = make_encoder()._run_quality_check(job, threading.Event())
+
+        sampling_info = quality_check.call_args.args[3]
+        self.assertTrue(result.passed)
+        self.assertEqual((sampling_info.width, sampling_info.height), (1080, 1920))
+        self.assertEqual((job.info.width, job.info.height), (1920, 1080))
+
     def test_best_quality_pass_returns_without_retry_and_emits_pass(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
@@ -583,7 +599,7 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
         self.assertEqual(job.final_selected_profile, PROFILE_BEST_DETAIL_2PASS)
         self.assertEqual(event_keys(events), ["message.quality_retry_started", "message.quality_retry_restored_best"])
 
-    def test_unexpected_maximum_plan_exception_after_backup_restores_best(self):
+    def test_unexpected_maximum_plan_exception_restores_best_as_success(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
             best_plan = job.h265_encode_plan
@@ -596,16 +612,18 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
                     "encoder.build_maximum_detail_2pass_plan",
                     side_effect=RuntimeError("maximum plan failed"),
                 ),
+                patch("encoder.logging.warning"),
             ):
-                with self.assertRaisesRegex(RuntimeError, "maximum plan failed"):
-                    make_encoder().encode(job, True, threading.Event())
+                result = make_encoder().encode(job, True, threading.Event())
 
+            self.assertEqual(result.status, "success")
             self.assertTrue(job.output_path.exists())
             self.assertEqual(job.output_path.read_bytes(), b"best-output")
             self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(job.quality_check_status, QUALITY_STATUS_RETRY_FAILED)
             self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
 
-    def test_unexpected_retry_encode_exception_restores_best(self):
+    def test_unexpected_retry_encode_exception_restores_best_as_success(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
             best_plan = job.h265_encode_plan
@@ -629,16 +647,18 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
             with (
                 patch.object(Encoder, "_encode_h265_two_pass", side_effect=encode_attempt),
                 patch("encoder.run_quality_check", return_value=failed_quality()),
+                patch("encoder.logging.warning"),
             ):
-                with self.assertRaisesRegex(RuntimeError, "retry crashed"):
-                    make_encoder().encode(job, True, threading.Event())
+                result = make_encoder().encode(job, True, threading.Event())
 
+            self.assertEqual(result.status, "success")
             self.assertEqual(job.output_path.read_bytes(), b"best-output")
             self.assertIs(job.h265_encode_plan, best_plan)
             self.assertEqual(job.progress, 1.0)
+            self.assertEqual(job.quality_check_status, QUALITY_STATUS_RETRY_FAILED)
             self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
 
-    def test_unexpected_retry_quality_exception_restores_best(self):
+    def test_unexpected_retry_quality_exception_restores_best_as_success(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
             best_plan = job.h265_encode_plan
@@ -656,12 +676,14 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
                     "encoder.run_quality_check",
                     side_effect=[failed_quality(), RuntimeError("unexpected quality failure")],
                 ),
+                patch("encoder.logging.warning"),
             ):
-                with self.assertRaisesRegex(RuntimeError, "unexpected quality failure"):
-                    make_encoder().encode(job, True, threading.Event())
+                result = make_encoder().encode(job, True, threading.Event())
 
+            self.assertEqual(result.status, "success")
             self.assertEqual(job.output_path.read_bytes(), b"best-output")
             self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(job.quality_check_status, QUALITY_STATUS_RETRY_FAILED)
             self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
 
     def test_quality_event_callback_exception_does_not_break_retry_transaction(self):
@@ -826,7 +848,7 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
             self.assertEqual(len(backups), 1)
             self.assertEqual(backups[0].read_bytes(), b"best-output")
 
-    def test_backup_cleanup_exception_restores_best_before_propagating(self):
+    def test_backup_cleanup_exception_returns_restored_best_as_success(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
             best_plan = job.h265_encode_plan
@@ -844,15 +866,18 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
                 patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt),
                 patch("encoder.run_quality_check", side_effect=[failed_quality(), passed_quality()]),
                 patch.object(Path, "unlink", autospec=True, side_effect=OSError("cleanup denied")),
+                patch("encoder.logging.warning") as warning,
             ):
-                with self.assertRaisesRegex(OSError, "cleanup denied"):
-                    make_encoder().encode(
-                        job,
-                        True,
-                        threading.Event(),
-                        quality_event_callback=collect_events(events),
-                    )
+                result = make_encoder().encode(
+                    job,
+                    True,
+                    threading.Event(),
+                    quality_event_callback=collect_events(events),
+                )
 
+            self.assertEqual(result.status, "success")
+            self.assertIs(result.output_info, job.info)
+            warning.assert_called_once()
             self.assertEqual(job.output_path.read_bytes(), b"best-output")
             self.assertIs(job.h265_encode_plan, best_plan)
             self.assertEqual(

@@ -9,7 +9,12 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from auto_detail import AutoDetailDecision, build_best_detail_2pass_plan, choose_auto_detail_plan
+from auto_detail import (
+    AutoDetailDecision,
+    build_best_detail_2pass_plan,
+    choose_auto_detail_plan,
+    estimate_source_video_bitrate_kbps,
+)
 from audio_check import detect_volume
 from content_analyzer import AnalysisCancelled, ContentAnalysisError, analyze_content, analyze_production_detail
 from encoder import Encoder, build_output_path
@@ -527,12 +532,13 @@ class CompressorWindow(tk.Tk):
         assert self.ffmpeg_paths is not None
         assert job.info is not None
         self.ui_queue.put(("log", self.localizer.t("message.analyzing_auto_detail", name=job.input_path.name)))
+        display_width, display_height = job.info.display_dimensions
         try:
             analysis = analyze_production_detail(
                 self.ffmpeg_paths.ffmpeg,
                 job.input_path,
-                source_width=job.info.width,
-                source_height=job.info.height,
+                source_width=display_width,
+                source_height=display_height,
                 duration_sec=job.info.duration_sec,
                 cancel_event=self.cancel_event,
             )
@@ -560,7 +566,7 @@ class CompressorWindow(tk.Tk):
             job.auto_selected_profile = plan.selected_profile
             job.auto_risk_score = 0.0
             job.auto_risk_reasons = f"analysis_failed:{str(exc)[:120]}"
-            job.source_video_bitrate_kbps = job.info.video_bit_rate_kbps or job.info.format_bit_rate_kbps
+            job.source_video_bitrate_kbps = estimate_source_video_bitrate_kbps(job.info, job.input_path)
             job.source_fps = job.info.fps
             job.peak_complexity_score = 0.0
             job.small_detail_score = 0.0

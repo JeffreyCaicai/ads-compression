@@ -6,7 +6,7 @@ import os
 import subprocess
 import threading
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -594,17 +594,23 @@ class Encoder:
                 "message.quality_retry_kept_maximum",
             )
             return retry_result
-        except Exception:
+        except Exception as exc:
             restore_error = backup.restore_best()
             if restore_error:
                 return self._fail(job, restore_error)
+            logging.warning(
+                "Quality retry failed for %s; restored Best output: %s",
+                job.input_path,
+                exc,
+                exc_info=True,
+            )
             job.quality_check_status = QUALITY_STATUS_RETRY_FAILED
             self._emit_quality_event(
                 quality_event_callback,
                 job,
                 "message.quality_retry_restored_best",
             )
-            raise
+            return initial_result
         finally:
             if backup.owns_best and not backup.restore_failed:
                 restore_error = backup.restore_best()
@@ -617,11 +623,24 @@ class Encoder:
         cancel_event: threading.Event,
     ) -> QualityCheckResult:
         assert job.info is not None
+        display_width, display_height = job.info.display_dimensions
+        quality_source_info = job.info
+        if (display_width, display_height) != (job.info.width, job.info.height):
+            quality_source_info = replace(
+                job.info,
+                width=display_width,
+                height=display_height,
+                sample_aspect_ratio="1:1",
+                display_aspect_ratio=None,
+                rotation_degrees=0,
+                display_width=display_width,
+                display_height=display_height,
+            )
         return run_quality_check(
             self.paths.ffmpeg,
             job.input_path,
             job.output_path,
-            job.info,
+            quality_source_info,
             job.small_detail_score,
             cancel_event=cancel_event,
         )
