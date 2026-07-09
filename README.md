@@ -65,7 +65,7 @@ H.265 / 25fps / 固定使用 Complex 目标码率 / 两遍编码
 
 H.265 Production - Auto Detail (2-pass)
 H.265 / 自动分析细节风险 / 自动选择 Best Detail (2-pass) 或 Maximum Detail (2-pass)
-适合批量正式投放场景。程序会先分析每个视频的生产细节风险，再自动选择普通 Best Detail (2-pass) 或 Maximum Detail (2-pass)，减少人工逐条判断和选错参数的风险。
+适合批量正式投放场景。程序会先分析每个视频的生产细节风险，再自动选择普通 Best Detail (2-pass) 或 Maximum Detail (2-pass)，减少人工逐条判断和选错参数的风险。完成输出验证后，程序还会检查输出质量；如果从 Best Detail 开始且检查发现风险或检查无法完成，最多自动重试一次 Maximum Detail。
 
 H.265 Smart Auto - Analyze Content
 H.265 / 25fps / 先快速抽样分析画面复杂度，再自动选择目标码率
@@ -112,6 +112,8 @@ H.265 / 25fps / 更低目标码率
 
 压缩过程中可以点击“取消”。当前 FFmpeg 任务会被终止，未处理的文件会标记为“已取消”。
 
+Auto Detail 的抽样分析和输出质量检查也支持取消。若取消发生在为 Maximum Detail 重试期间，程序会恢复已保留的 Best Detail 输出；不会继续发起下一次重试。
+
 ## 如何判断成功
 
 表格中状态显示“成功”代表该文件已压缩完成，并且通过了输出验证。程序会按所选模式检查：
@@ -126,13 +128,17 @@ H.265 / 25fps / 更低目标码率
 - 音频为 AAC / 48000Hz / 双声道；
 - 输出时长与源文件差异不超过 0.5 秒。
 
+Auto Detail 还会在输出验证后比较源文件与输出文件。质量检查使用横屏 `320x按比例高度` 或竖屏 `按比例宽度x320` 的灰度抽样；长于 30 秒的视频取开头、中间和结尾各 10 秒。SSIM 必须达到 `0.94`。源文件细节分数达到 `20` 时，输出还必须保留至少 `80%` 的细节。若 Best Detail 未达到这些条件，或质量检查本身失败，程序只会重试一次 Maximum Detail。
+
+“质量警告”不表示压缩失败：它表示输出已通过结构、编码、音频、分辨率和时长验证，但质量检查仍有警告，Maximum Detail 输出会被保留以供人工复核。若重试编码、检查或取消未能完成，程序会恢复先前的 Best Detail 输出；恢复失败才会标记失败。
+
 每次任务结束后，输出目录会生成一份 CSV 报告：
 
 ```text
 compression_report_YYYYMMDD_HHMMSS.csv
 ```
 
-报告包含源文件、输出文件、状态、失败原因、压缩前后大小、节省比例、音频状态、encoding_mode、CRF、preset、target_video_bitrate_kbps、target_fps、content_complexity、content_complexity_score 等信息。
+报告包含源文件、输出文件、状态、失败原因、压缩前后大小、节省比例、音频状态、`encoding_mode`、CRF、preset、`target_video_bitrate_kbps`、`target_fps`、`content_complexity`、`content_complexity_score` 等信息。Auto Detail 还记录 `auto_selected_profile`、风险和源文件指标、峰值/细节/运动分析指标、`target_gop`、`quality_check_status`、`ssim_score`、`detail_retention_percent`、`quality_retry_count`、`quality_retry_reason` 与 `final_selected_profile`，方便人工复核。
 
 ## 无音轨或疑似静音怎么办
 
@@ -202,6 +208,7 @@ H.265 / libx265, preset slow, Main Profile,
 自动选择 best_detail_2pass 或 maximum_detail_2pass，
 best_detail_2pass 使用现有 Best Detail (2-pass) 参数。
 maximum_detail_2pass 使用 2000k / 2600k / 3200k 目标视频码率，30fps 源优先保留 30fps，GOP 60，maxrate=target*2，bufsize=target*4，并启用 rc-lookahead=50, aq-mode=3, psy-rd=2.0 等细节保护参数。
+生产细节分析按源方向使用 320 像素长边的等比例灰度帧、2fps；长源取开头/中间/结尾三段。分析空间细节、细节瓦片、运动和场景变化，并使用 1 秒/2 秒窗口峰值及 P90/P95 指标选择档位。输出检查使用相同的三段抽样，要求 SSIM >= 0.94；源细节 >= 20 时要求细节保留率 >= 80%。Best Detail 警告或检查失败最多重试一次 Maximum Detail；Maximum Detail 的警告或检查失败只保留其结构有效输出供人工复核。
 
 H.265 Small File:
 H.265 / libx265, preset slow, Main Profile,
@@ -232,6 +239,8 @@ H.265 Production / Small File / Smart Auto 目标视频码率：
 ```powershell
 .\build_windows.ps1
 ```
+
+构建脚本会在安装依赖和运行 PyInstaller 前确认随包的 `ffmpeg.exe`、`ffprobe.exe` 存在，并确认 FFmpeg 包含 `libx265` 编码器和 `ssim` 过滤器。Windows 专用的真实 FFmpeg smoke test 只会在 Windows 且这两个随包二进制可用时运行；其他系统会跳过该测试，不能据此推断 Windows smoke 已运行。
 
 打包结果位于：
 
