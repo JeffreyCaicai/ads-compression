@@ -19,12 +19,28 @@ class VideoInfo:
     audio_channels: Optional[int]
     has_audio: bool
     pix_fmt: Optional[str] = None
+    video_bit_rate_kbps: int | None = None
+    audio_bit_rate_kbps: int | None = None
+    format_bit_rate_kbps: int | None = None
 
     @property
     def resolution(self) -> str:
         if self.width and self.height:
             return f"{self.width}x{self.height}"
         return ""
+
+
+@dataclass(frozen=True)
+class H265EncodePlan:
+    selected_profile: str
+    target_video_bitrate_kbps: int
+    target_fps: float
+    gop: int
+    keyint_min: int
+    scenecut: int
+    maxrate_kbps: int
+    bufsize_kbps: int
+    x265_params: tuple[str, ...] = ()
 
 
 @dataclass
@@ -44,6 +60,18 @@ class VideoJob:
     content_complexity: str = ""
     content_complexity_score: float = 0.0
     target_video_bitrate_kbps: int | None = None
+    h265_encode_plan: Optional[H265EncodePlan] = None
+    auto_selected_profile: str = ""
+    auto_risk_score: float = 0.0
+    auto_risk_reasons: str = ""
+    source_video_bitrate_kbps: int | None = None
+    source_fps: float = 0.0
+    peak_complexity_score: float = 0.0
+    small_detail_score: float = 0.0
+    peak_motion_score: float = 0.0
+    scene_change_rate: float = 0.0
+    target_fps: float | None = None
+    target_gop: int | None = None
 
 
 @dataclass

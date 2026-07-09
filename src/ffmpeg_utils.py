@@ -119,6 +119,13 @@ def parse_int(value: Any) -> int | None:
         return None
 
 
+def parse_bitrate_kbps(value: Any) -> int | None:
+    parsed = parse_int(value)
+    if parsed is None or parsed <= 0:
+        return None
+    return round(parsed / 1000)
+
+
 def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
     streams = payload.get("streams") or []
     video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
@@ -142,6 +149,9 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
         audio_channels=parse_int(audio_stream.get("channels")) if audio_stream else None,
         has_audio=audio_stream is not None,
         pix_fmt=video_stream.get("pix_fmt"),
+        video_bit_rate_kbps=parse_bitrate_kbps(video_stream.get("bit_rate")),
+        audio_bit_rate_kbps=parse_bitrate_kbps(audio_stream.get("bit_rate")) if audio_stream else None,
+        format_bit_rate_kbps=parse_bitrate_kbps(format_data.get("bit_rate")),
     )
 
 
@@ -180,6 +190,7 @@ def validate_output_file(
     source_info: VideoInfo,
     output_info: VideoInfo,
     encoding_mode: str = DEFAULT_ENCODING_MODE,
+    expected_fps: float | None = None,
 ) -> list[str]:
     errors: list[str] = []
     if not output_path.exists() or output_path.stat().st_size <= 0:
@@ -194,7 +205,7 @@ def validate_output_file(
         errors.append(f"输出像素格式不是 {TARGET_PIX_FMT}：{output_info.pix_fmt}")
     if (output_info.width, output_info.height) != (source_info.width, source_info.height):
         errors.append("输出分辨率与源文件不一致。")
-    target_fps = target_fps_for_mode(encoding_mode)
+    target_fps = expected_fps or target_fps_for_mode(encoding_mode)
     if abs(output_info.fps - target_fps) > 0.5:
         errors.append(f"输出帧率不是约 {target_fps:g}fps：{output_info.fps:.3f}")
     if output_info.audio_codec != "aac":
