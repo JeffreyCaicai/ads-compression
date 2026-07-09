@@ -3,7 +3,7 @@ import sys
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -125,6 +125,55 @@ def fake_running_process() -> Mock:
 
 
 class ContentAnalyzerTests(unittest.TestCase):
+    def test_pre_set_cancellation_beats_fast_nonzero_process(self):
+        cancel_event = threading.Event()
+        cancel_event.set()
+        process = Mock(returncode=1)
+        process.communicate.return_value = (b"", b"FFmpeg failed")
+
+        with patch("content_analyzer.subprocess.Popen", return_value=process):
+            with self.assertRaises(AnalysisCancelled):
+                _run_rawvideo_process(["ffmpeg"], cancel_event)
+
+        self.assertEqual(process.communicate.call_args_list, [call(timeout=5)])
+        process.terminate.assert_called_once()
+
+    def test_cancellation_after_fast_nonzero_process_completes_beats_analysis_error(self):
+        cancel_event = threading.Event()
+        process = Mock(returncode=1)
+
+        def complete_process(**kwargs):
+            cancel_event.set()
+            return b"", b"FFmpeg failed"
+
+        process.communicate.side_effect = complete_process
+        with patch("content_analyzer.subprocess.Popen", return_value=process):
+            with self.assertRaises(AnalysisCancelled):
+                _run_rawvideo_process(["ffmpeg"], cancel_event)
+
+        self.assertEqual(process.communicate.call_args_list[0], call(timeout=0.1))
+        process.terminate.assert_called_once()
+
+    def test_pre_set_cancellation_kills_after_terminate_timeout(self):
+        cancel_event = threading.Event()
+        cancel_event.set()
+        process = Mock()
+        process.communicate.side_effect = [
+            subprocess.TimeoutExpired(["ffmpeg"], 5),
+            (b"", b""),
+        ]
+
+        with patch("content_analyzer.subprocess.Popen", return_value=process):
+            with self.assertRaises(AnalysisCancelled):
+                _run_rawvideo_process(["ffmpeg"], cancel_event)
+
+        process.terminate.assert_called_once()
+        process.kill.assert_called_once()
+        self.assertEqual(
+            process.communicate.call_args_list,
+            [call(timeout=5), call()],
+        )
+
     def test_production_analysis_cancel_terminates_process(self):
         cancel_event = threading.Event()
         cancel_event.set()

@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from content_analyzer import AnalysisCancelled, ContentAnalysisError, ProductionDetailAnalysis
 from localization import DEFAULT_LANGUAGE, Localizer
-from models import FFmpegPaths, VideoInfo, VideoJob
-from settings import MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS
+from models import CompressionResult, FFmpegPaths, VideoInfo, VideoJob
+from settings import DEFAULT_ENCODING_MODE, MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS
 from ui_main import CompressorWindow
 
 
@@ -143,6 +143,34 @@ class AutoDetailFallbackTests(unittest.TestCase):
 
         encoder.encode.assert_not_called()
         self.assertEqual(job.status, "cancelled")
+
+    def test_post_probe_cancellation_does_not_skip_non_auto_detail_encode(self):
+        window = self.make_window()
+        info = self.make_info()
+        encoder = Mock()
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source_path = Path(temporary_directory) / "source.mp4"
+            source_path.touch()
+            job = VideoJob(
+                input_path=source_path,
+                output_path=Path(temporary_directory) / "out.mp4",
+                encoding_mode=DEFAULT_ENCODING_MODE,
+            )
+
+            def probe_then_cancel(*args, **kwargs):
+                window.cancel_event.set()
+                return info
+
+            encoder.encode.return_value = CompressionResult(job=job, status="success")
+            with (
+                patch("ui_main.Encoder", return_value=encoder),
+                patch("ui_main.probe_video", side_effect=probe_then_cancel),
+                patch("ui_main.write_report", return_value=Path(temporary_directory) / "report.csv"),
+            ):
+                window._worker([job], Path(temporary_directory), overwrite=False, detect_silence_enabled=False)
+
+        encoder.encode.assert_called_once()
 
 
 if __name__ == "__main__":

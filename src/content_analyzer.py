@@ -215,25 +215,34 @@ def _run_rawvideo_process(args: list[str], cancel_event: threading.Event | None)
         stderr=subprocess.PIPE,
         startupinfo=startupinfo_for_windows(),
     )
+    _raise_if_rawvideo_cancelled(process, cancel_event)
     started_at = time.monotonic()
     while True:
         try:
             stdout, stderr = process.communicate(timeout=PROCESS_POLL_INTERVAL_SECONDS)
             break
         except subprocess.TimeoutExpired:
-            if cancel_event is not None and cancel_event.is_set():
-                _terminate_rawvideo_process(process)
-                raise AnalysisCancelled("Production detail analysis cancelled.")
+            _raise_if_rawvideo_cancelled(process, cancel_event)
             if time.monotonic() - started_at >= SAMPLE_TIMEOUT_SECONDS:
                 _terminate_rawvideo_process(process)
                 raise subprocess.TimeoutExpired(args, SAMPLE_TIMEOUT_SECONDS)
 
+    _raise_if_rawvideo_cancelled(process, cancel_event)
     if process.returncode != 0:
+        _raise_if_rawvideo_cancelled(process, cancel_event)
         error_message = stderr.decode("utf-8", errors="replace").strip()
         raise ContentAnalysisError(
             error_message or f"FFmpeg production detail analysis failed with code {process.returncode}."
         )
     return stdout
+
+
+def _raise_if_rawvideo_cancelled(
+    process: subprocess.Popen[bytes], cancel_event: threading.Event | None
+) -> None:
+    if cancel_event is not None and cancel_event.is_set():
+        _terminate_rawvideo_process(process)
+        raise AnalysisCancelled("Production detail analysis cancelled.")
 
 
 def _terminate_rawvideo_process(process: subprocess.Popen[bytes]) -> None:

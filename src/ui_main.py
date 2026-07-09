@@ -392,7 +392,7 @@ class CompressorWindow(tk.Tk):
                 elif is_h265_smart_auto_mode(job.encoding_mode):
                     self._analyze_job_content(job)
 
-                if self.cancel_event.is_set():
+                if is_h265_auto_detail_mode(job.encoding_mode) and self.cancel_event.is_set():
                     self._mark_cancelled(job)
                     self.ui_queue.put(("job", job))
                     self.results.append(
