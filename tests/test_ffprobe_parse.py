@@ -10,6 +10,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ffmpeg_utils import candidate_roots, executable_name, find_ffmpeg_paths, parse_ffprobe_json, parse_fraction
 
 
+def video_payload(*, avg_frame_rate: str, r_frame_rate: str) -> dict:
+    return {
+        "format": {},
+        "streams": [
+            {
+                "codec_type": "video",
+                "avg_frame_rate": avg_frame_rate,
+                "r_frame_rate": r_frame_rate,
+            }
+        ],
+    }
+
+
 class FFprobeParseTests(unittest.TestCase):
     def test_parse_fraction_handles_standard_ffprobe_rate(self):
         self.assertEqual(parse_fraction("30000/1001"), 30000 / 1001)
@@ -49,6 +62,16 @@ class FFprobeParseTests(unittest.TestCase):
         self.assertEqual(info.audio_channels, 2)
         self.assertIs(info.has_audio, True)
         self.assertEqual(info.pix_fmt, "yuv420p")
+
+    def test_parse_ffprobe_json_falls_back_when_average_frame_rate_is_zero(self):
+        payload = video_payload(avg_frame_rate="0/0", r_frame_rate="30/1")
+
+        self.assertEqual(parse_ffprobe_json(payload).fps, 30.0)
+
+    def test_parse_ffprobe_json_prefers_positive_average_frame_rate(self):
+        payload = video_payload(avg_frame_rate="30000/1001", r_frame_rate="30/1")
+
+        self.assertAlmostEqual(parse_ffprobe_json(payload).fps, 30000 / 1001)
 
     def test_parse_ffprobe_json_marks_missing_audio(self):
         payload = {

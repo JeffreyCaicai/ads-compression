@@ -105,6 +105,13 @@ def parse_fraction(value: str | None) -> float:
         return 0.0
 
 
+def parse_video_fps(video_stream: dict[str, Any]) -> float:
+    average = parse_fraction(video_stream.get("avg_frame_rate"))
+    if average > 0:
+        return average
+    return parse_fraction(video_stream.get("r_frame_rate"))
+
+
 def parse_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
@@ -142,7 +149,7 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
         width=int(video_stream.get("width") or 0),
         height=int(video_stream.get("height") or 0),
         duration_sec=duration,
-        fps=parse_fraction(video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")),
+        fps=parse_video_fps(video_stream),
         video_codec=str(video_stream.get("codec_name") or ""),
         audio_codec=str(audio_stream.get("codec_name")) if audio_stream else None,
         audio_sample_rate=parse_int(audio_stream.get("sample_rate")) if audio_stream else None,
