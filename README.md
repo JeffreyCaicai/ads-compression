@@ -1,6 +1,6 @@
 # 广告屏视频压缩工具
 
-这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式，并保留源视频分辨率。默认输出仍为 H.264 + AAC 96k；支持 H.265 Production、H.265 Small File 和 H.265 Smart Auto 模式，用于已确认支持 H.265 的新屏降低传输成本。
+这是一个给运营、项目执行和素材整理同事使用的 Windows 桌面工具。它会把视频压缩为广告屏播放验证过的 MP4 格式，并保留源视频分辨率。默认输出仍为 H.264 + AAC 96k；支持 H.265 Production、H.265 Production - Auto Detail (2-pass)、H.265 Small File 和 H.265 Smart Auto 模式，用于已确认支持 H.265 的新屏降低传输成本。
 
 ## 如何启动
 
@@ -63,6 +63,10 @@ H.265 Production - Best Detail (2-pass)
 H.265 / 25fps / 固定使用 Complex 目标码率 / 两遍编码
 适合重点正式投放、与阿里云样片对比或对细节要求更高的素材。码率分配更充分，但压缩时间通常接近一遍编码的两倍。
 
+H.265 Production - Auto Detail (2-pass)
+H.265 / 自动分析细节风险 / 自动选择 Best Detail (2-pass) 或 Maximum Detail (2-pass)
+适合批量正式投放场景。程序会先分析每个视频的生产细节风险，再自动选择普通 Best Detail (2-pass) 或 Maximum Detail (2-pass)，减少人工逐条判断和选错参数的风险。
+
 H.265 Smart Auto - Analyze Content
 H.265 / 25fps / 先快速抽样分析画面复杂度，再自动选择目标码率
 适合大多数已确认支持 H.265 的新屏，是优先推荐的小文件模式。
@@ -80,7 +84,7 @@ H.265 / 25fps / 更低目标码率
 适合静态画面、简单背景、文字或低运动素材。
 ```
 
-默认使用 Standard，保留 H.264 兼容行为。新屏正式投放建议使用 H.265 Production - Best Detail；重点素材或需要更好码率分配时使用 H.265 Production - Best Detail (2-pass)。如果目标是进一步节省流量，可以使用 H.265 Smart Auto - Analyze Content，程序会自动判断素材复杂度并选择 Simple / Standard / Complex 目标码率。如果需要人工指定复杂度，可以使用三个 H.265 Small File 手动模式。75 块只支持 H.264 的老屏继续使用 Standard / High Motion / Screen Safe。
+默认使用 Standard，保留 H.264 兼容行为。新屏正式投放建议使用 H.265 Production - Best Detail；重点素材或需要更好码率分配时使用 H.265 Production - Best Detail (2-pass)。如果批量素材质量差异较大，优先使用 H.265 Production - Auto Detail (2-pass)。它不会把所有视频都强制压成大文件，只会对 QR code、小字、logo、高运动、高码率、高像素屏等高风险素材提高目标码率和保留 30fps。如果目标是进一步节省流量，可以使用 H.265 Smart Auto - Analyze Content，程序会自动判断素材复杂度并选择 Simple / Standard / Complex 目标码率。如果需要人工指定复杂度，可以使用三个 H.265 Small File 手动模式。75 块只支持 H.264 的老屏继续使用 Standard / High Motion / Screen Safe。
 
 ## 输出文件在哪里
 
@@ -114,11 +118,11 @@ H.265 / 25fps / 更低目标码率
 
 - 输出文件存在且大小大于 0；
 - H.264 模式下视频编码为 H.264；
-- H.265 Production / Small File / Smart Auto 模式下视频编码为 HEVC/H.265；
+- H.265 Production / Auto Detail / Small File / Smart Auto 模式下视频编码为 HEVC/H.265；
 - 像素格式为 yuv420p；
 - 分辨率与源文件一致；
 - H.264 模式帧率约为 30fps；
-- H.265 Production / Small File / Smart Auto 模式帧率约为 25fps；
+- H.265 Production - Auto Detail (2-pass) 在 30fps 源上优先保留 30fps；H.265 Production / Small File / Smart Auto 模式帧率约为 25fps；
 - 音频为 AAC / 48000Hz / 双声道；
 - 输出时长与源文件差异不超过 0.5 秒。
 
@@ -192,6 +196,12 @@ H.265 / libx265, preset slow, Main Profile,
 第一遍分析视频，第二遍正式输出 MP4,
 固定使用 Complex 目标视频码率,
 AAC 96k, 48000 Hz, 双声道, MP4 + faststart
+
+H.265 Production - Auto Detail (2-pass):
+H.265 / libx265, preset slow, Main Profile,
+自动选择 best_detail_2pass 或 maximum_detail_2pass，
+best_detail_2pass 使用现有 Best Detail (2-pass) 参数。
+maximum_detail_2pass 使用 2000k / 2600k / 3200k 目标视频码率，30fps 源优先保留 30fps，GOP 60，maxrate=target*2，bufsize=target*4，并启用 rc-lookahead=50, aq-mode=3, psy-rd=2.0 等细节保护参数。
 
 H.265 Small File:
 H.265 / libx265, preset slow, Main Profile,
