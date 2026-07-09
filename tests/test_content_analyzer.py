@@ -13,12 +13,15 @@ from content_analyzer import (
     SAMPLE_FPS,
     SAMPLE_HEIGHT,
     SAMPLE_WIDTH,
+    _clustered_detail_score,
     analyze_production_detail_raw_frames,
     analyze_raw_frames,
     build_production_detail_sample_args,
     build_sample_args,
+    percentile,
     production_sample_dimensions,
     production_sample_segments,
+    rolling_means,
 )
 from settings import CONTENT_COMPLEX, CONTENT_SIMPLE, MODE_H265_SMART_AUTO
 
@@ -36,24 +39,74 @@ def alternating_frames(count: int) -> bytes:
     return b"".join(frames)
 
 
-def production_solid_frames(value: int, count: int) -> bytes:
-    frame = bytes([value]) * (PRODUCTION_SAMPLE_WIDTH * PRODUCTION_SAMPLE_HEIGHT)
+def production_solid_frames(
+    value: int,
+    count: int,
+    width: int = PRODUCTION_SAMPLE_WIDTH,
+    height: int = PRODUCTION_SAMPLE_HEIGHT,
+) -> bytes:
+    frame = bytes([value]) * (width * height)
     return frame * count
 
 
-def production_checkerboard_frames(count: int) -> bytes:
+def production_checkerboard_frame(
+    width: int = PRODUCTION_SAMPLE_WIDTH,
+    height: int = PRODUCTION_SAMPLE_HEIGHT,
+    phase: int = 0,
+) -> bytes:
+    pixels = []
+    for y in range(height):
+        for x in range(width):
+            pixels.append(255 if ((x // 4 + y // 4 + phase) % 2) else 0)
+    return bytes(pixels)
+
+
+def production_checkerboard_frames(
+    count: int,
+    width: int = PRODUCTION_SAMPLE_WIDTH,
+    height: int = PRODUCTION_SAMPLE_HEIGHT,
+) -> bytes:
     frames = []
     for frame_index in range(count):
-        pixels = []
-        phase = frame_index % 2
-        for y in range(PRODUCTION_SAMPLE_HEIGHT):
-            for x in range(PRODUCTION_SAMPLE_WIDTH):
-                pixels.append(255 if ((x // 4 + y // 4 + phase) % 2) else 0)
-        frames.append(bytes(pixels))
+        frames.append(production_checkerboard_frame(width, height, phase=frame_index % 2))
     return b"".join(frames)
 
 
+def replace_frame(raw: bytes, frame_index: int, replacement: bytes) -> bytes:
+    frame_size = len(replacement)
+    start = frame_index * frame_size
+    return raw[:start] + replacement + raw[start + frame_size :]
+
+
+def detail_tile_frame(width: int, height: int, tile_coordinates: set[tuple[int, int]]) -> bytes:
+    pixels = bytearray(width * height)
+    for tile_y, tile_x in tile_coordinates:
+        y_start = tile_y * height // 8
+        y_end = (tile_y + 1) * height // 8
+        x_start = tile_x * width // 8
+        x_end = (tile_x + 1) * width // 8
+        for y in range(y_start, y_end):
+            for x in range(x_start, x_end):
+                pixels[y * width + x] = 255 if ((x + y) % 2) else 0
+    return bytes(pixels)
+
+
+def qr_cluster_frame(width: int, height: int) -> bytes:
+    return detail_tile_frame(width, height, {(3, 3), (3, 4), (4, 3), (4, 4)})
+
+
+def sparse_noise_frame(width: int, height: int, matching_edge_count: bool = True) -> bytes:
+    del matching_edge_count
+    return detail_tile_frame(width, height, {(0, 0), (0, 7), (7, 0), (7, 7)})
+
+
 class ContentAnalyzerTests(unittest.TestCase):
+    def test_percentile_uses_linear_interpolation(self):
+        self.assertEqual(percentile([0.0, 10.0, 20.0, 30.0], 0.5), 15.0)
+
+    def test_rolling_means_rejects_incomplete_windows(self):
+        self.assertEqual(rolling_means([10.0, 20.0, 30.0], 4), [])
+
     def test_production_sample_dimensions_preserve_company_screen_orientations(self):
         self.assertEqual(production_sample_dimensions(1920, 1080), (320, 180))
         self.assertEqual(production_sample_dimensions(1920, 1440), (320, 240))
@@ -140,6 +193,40 @@ class ContentAnalyzerTests(unittest.TestCase):
         self.assertLess(analysis.small_detail_score, 10)
         self.assertLess(analysis.peak_motion_score, 10)
         self.assertEqual(analysis.sampled_frames, 10)
+
+    def test_isolated_detail_frame_does_not_define_temporal_peak(self):
+        raw = production_solid_frames(96, 8, width=320, height=180)
+        raw = replace_frame(raw, 4, production_checkerboard_frame(320, 180))
+
+        analysis = analyze_production_detail_raw_frames(raw, 320, 180)
+
+        self.assertLess(analysis.peak_complexity_score, analysis.spatial_p95)
+
+    def test_sustained_two_second_detail_raises_temporal_peak(self):
+        raw = production_solid_frames(96, 4, width=320, height=180)
+        raw += production_checkerboard_frames(4, width=320, height=180)
+
+        analysis = analyze_production_detail_raw_frames(raw, 320, 180)
+
+        self.assertGreaterEqual(analysis.peak_two_second_complexity, 60.0)
+
+    def test_temporal_windows_do_not_cross_production_sample_boundaries(self):
+        analysis = analyze_production_detail_raw_frames(
+            production_solid_frames(96, 1) + production_checkerboard_frames(1),
+            segment_frame_counts=(1, 1),
+        )
+
+        self.assertEqual(analysis.peak_one_second_complexity, 0.0)
+        self.assertEqual(analysis.peak_two_second_complexity, 0.0)
+
+    def test_local_qr_like_cluster_scores_above_sparse_distributed_noise(self):
+        clustered = qr_cluster_frame(320, 180)
+        sparse = sparse_noise_frame(320, 180, matching_edge_count=True)
+
+        self.assertGreater(
+            _clustered_detail_score(clustered, 320, 180),
+            _clustered_detail_score(sparse, 320, 180),
+        )
 
     def test_production_detail_checkerboard_frames_have_high_small_detail_score(self):
         analysis = analyze_production_detail_raw_frames(production_checkerboard_frames(10))

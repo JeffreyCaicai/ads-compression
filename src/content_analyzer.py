@@ -47,6 +47,14 @@ class ProductionDetailAnalysis:
     peak_motion_score: float
     scene_change_rate: float
     sampled_frames: int
+    peak_one_second_complexity: float = 0.0
+    peak_two_second_complexity: float = 0.0
+    spatial_p90: float = 0.0
+    spatial_p95: float = 0.0
+    small_detail_p90: float = 0.0
+    small_detail_p95: float = 0.0
+    motion_p90: float = 0.0
+    motion_p95: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -258,27 +266,29 @@ def analyze_production_detail_raw_frames(
         for index in range(frame_count)
     ]
     spatial_values = [_production_spatial_complexity(frame, width) for frame in frames]
-    small_detail_values = [_small_detail_density(frame, width, height) for frame in frames]
+    clustered_detail_values = [_clustered_detail_score(frame, width, height) for frame in frames]
     if segment_frame_counts is None:
         segment_frame_counts = (frame_count,)
+    frame_segments = _frame_segments(frames, segment_frame_counts)
+    spatial_segments = _frame_segments(spatial_values, segment_frame_counts)
     motion_values = []
-    frame_offset = 0
-    for segment_count in segment_frame_counts:
-        segment_end = min(frame_count, frame_offset + max(0, segment_count))
+    for segment_frames in frame_segments:
         motion_values.extend(
             _production_motion_complexity(previous, current)
-            for previous, current in zip(frames[frame_offset:segment_end], frames[frame_offset + 1 : segment_end])
-        )
-        frame_offset = segment_end
-    if frame_offset < frame_count:
-        motion_values.extend(
-            _production_motion_complexity(previous, current)
-            for previous, current in zip(frames[frame_offset:], frames[frame_offset + 1 :])
+            for previous, current in zip(segment_frames, segment_frames[1:])
         )
 
-    peak_complexity = max(spatial_values or [0.0])
-    small_detail = max(small_detail_values or [0.0])
-    peak_motion = max(motion_values or [0.0])
+    peak_one_second_complexity = max(
+        (mean for values in spatial_segments for mean in rolling_means(values, 2)),
+        default=0.0,
+    )
+    peak_two_second_complexity = max(
+        (mean for values in spatial_segments for mean in rolling_means(values, 4)),
+        default=0.0,
+    )
+    peak_complexity = max(peak_one_second_complexity, peak_two_second_complexity)
+    small_detail = percentile(clustered_detail_values, 0.95)
+    peak_motion = percentile(motion_values, 0.95)
     scene_changes = sum(1 for value in motion_values if value >= 45.0)
     sample_duration = max(frame_count / PRODUCTION_SAMPLE_FPS, 0.001)
     scene_change_rate = scene_changes / sample_duration
@@ -289,7 +299,47 @@ def analyze_production_detail_raw_frames(
         peak_motion_score=round(min(100.0, peak_motion), 1),
         scene_change_rate=round(scene_change_rate, 3),
         sampled_frames=frame_count,
+        peak_one_second_complexity=round(min(100.0, peak_one_second_complexity), 1),
+        peak_two_second_complexity=round(min(100.0, peak_two_second_complexity), 1),
+        spatial_p90=round(min(100.0, percentile(spatial_values, 0.90)), 1),
+        spatial_p95=round(min(100.0, percentile(spatial_values, 0.95)), 1),
+        small_detail_p90=round(min(100.0, percentile(clustered_detail_values, 0.90)), 1),
+        small_detail_p95=round(min(100.0, percentile(clustered_detail_values, 0.95)), 1),
+        motion_p90=round(min(100.0, percentile(motion_values, 0.90)), 1),
+        motion_p95=round(min(100.0, percentile(motion_values, 0.95)), 1),
     )
+
+
+def percentile(values: list[float], percentile_value: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * max(0.0, min(percentile_value, 1.0))
+    lower = int(position)
+    upper = min(lower + 1, len(ordered) - 1)
+    fraction = position - lower
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * fraction
+
+
+def rolling_means(values: list[float], window_size: int) -> list[float]:
+    if window_size <= 0 or len(values) < window_size:
+        return []
+    return [
+        sum(values[index : index + window_size]) / window_size
+        for index in range(len(values) - window_size + 1)
+    ]
+
+
+def _frame_segments(values: list[object], segment_counts: tuple[int, ...]) -> list[list[object]]:
+    segments = []
+    value_offset = 0
+    for segment_count in segment_counts:
+        segment_end = min(len(values), value_offset + max(0, segment_count))
+        segments.append(values[value_offset:segment_end])
+        value_offset = segment_end
+    if value_offset < len(values):
+        segments.append(values[value_offset:])
+    return segments
 
 
 def classify_complexity(score: float) -> str:
@@ -343,23 +393,62 @@ def _production_motion_complexity(previous: bytes, current: bytes) -> float:
     return _motion_complexity(previous, current)
 
 
-def _small_detail_density(frame: bytes, width: int = PRODUCTION_SAMPLE_WIDTH, height: int = PRODUCTION_SAMPLE_HEIGHT) -> float:
-    if not frame:
+def _clustered_detail_score(
+    frame: bytes,
+    width: int = PRODUCTION_SAMPLE_WIDTH,
+    height: int = PRODUCTION_SAMPLE_HEIGHT,
+) -> float:
+    if not frame or width <= 0 or height <= 0:
         return 0.0
-    edge_hits = 0
-    checks = 0
-    for y in range(1, height):
-        row_start = y * width
-        prev_row_start = (y - 1) * width
-        for x in range(1, width):
-            pixel = frame[row_start + x]
-            left = frame[row_start + x - 1]
-            up = frame[prev_row_start + x]
-            local_edge = max(abs(pixel - left), abs(pixel - up))
-            if local_edge >= 40:
-                edge_hits += 1
-            checks += 1
-    return min(100.0, edge_hits / max(checks, 1) * 180.0)
+
+    dense_tiles = set()
+    for tile_y in range(8):
+        y_start = tile_y * height // 8
+        y_end = (tile_y + 1) * height // 8
+        for tile_x in range(8):
+            x_start = tile_x * width // 8
+            x_end = (tile_x + 1) * width // 8
+            edge_hits = 0
+            checks = 0
+            for y in range(y_start, y_end):
+                row_start = y * width
+                for x in range(x_start, x_end):
+                    if x + 1 < x_end:
+                        checks += 1
+                        if abs(frame[row_start + x] - frame[row_start + x + 1]) >= 40:
+                            edge_hits += 1
+                    if y + 1 < y_end:
+                        checks += 1
+                        if abs(frame[row_start + x] - frame[row_start + width + x]) >= 40:
+                            edge_hits += 1
+            if edge_hits / max(checks, 1) >= 0.12:
+                dense_tiles.add((tile_y, tile_x))
+
+    dense_tile_percent = len(dense_tiles) / 64 * 100.0
+    largest_cluster_percent = _largest_dense_cluster_size(dense_tiles) / 64 * 100.0
+    return min(100.0, dense_tile_percent * 0.6 + largest_cluster_percent * 0.4)
+
+
+def _largest_dense_cluster_size(dense_tiles: set[tuple[int, int]]) -> int:
+    largest_cluster = 0
+    unvisited = set(dense_tiles)
+    while unvisited:
+        cluster_size = 0
+        pending = [unvisited.pop()]
+        while pending:
+            tile_y, tile_x = pending.pop()
+            cluster_size += 1
+            for neighbor in (
+                (tile_y - 1, tile_x),
+                (tile_y + 1, tile_x),
+                (tile_y, tile_x - 1),
+                (tile_y, tile_x + 1),
+            ):
+                if neighbor in unvisited:
+                    unvisited.remove(neighbor)
+                    pending.append(neighbor)
+        largest_cluster = max(largest_cluster, cluster_size)
+    return largest_cluster
 
 
 def _edge_score(frame: bytes, width: int) -> float:
