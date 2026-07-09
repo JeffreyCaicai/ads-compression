@@ -797,6 +797,8 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
             best_plan = job.h265_encode_plan
+            best_targets = (job.target_video_bitrate_kbps, job.target_fps, job.target_gop)
+            events = []
             attempt = scripted_attempts(
                 job,
                 [
@@ -811,10 +813,32 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
                 patch.object(Path, "unlink", autospec=True, side_effect=OSError("cleanup denied")),
             ):
                 with self.assertRaisesRegex(OSError, "cleanup denied"):
-                    make_encoder().encode(job, True, threading.Event())
+                    make_encoder().encode(
+                        job,
+                        True,
+                        threading.Event(),
+                        quality_event_callback=collect_events(events),
+                    )
 
             self.assertEqual(job.output_path.read_bytes(), b"best-output")
             self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(
+                (job.target_video_bitrate_kbps, job.target_fps, job.target_gop),
+                best_targets,
+            )
+            self.assertEqual(job.final_selected_profile, PROFILE_BEST_DETAIL_2PASS)
+            self.assertEqual(job.quality_check_status, QUALITY_STATUS_RETRY_FAILED)
+            self.assertEqual(job.ssim_score, 0.93)
+            self.assertEqual(job.detail_retention_percent, 75.0)
+            self.assertEqual(job.quality_retry_reason, "ssim_below_threshold")
+            self.assertEqual(
+                event_keys(events),
+                [
+                    "message.quality_retry_started",
+                    "message.quality_passed",
+                    "message.quality_retry_restored_best",
+                ],
+            )
             self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
 
     def test_retry_failure_restores_first_success_progress_status_error_and_size(self):

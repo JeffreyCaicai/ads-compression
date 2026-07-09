@@ -54,6 +54,9 @@ class _RetainedOutputState:
     error_message: str
     output_size_bytes: int
     final_selected_profile: str
+    quality_check_status: str
+    ssim_score: float | None
+    detail_retention_percent: float | None
 
 
 class _QualityBackupTransaction:
@@ -436,17 +439,6 @@ class Encoder:
             return initial_result
 
         initial_profile = initial_plan.selected_profile
-        initial_state = _RetainedOutputState(
-            encode_plan=initial_plan,
-            target_video_bitrate_kbps=job.target_video_bitrate_kbps,
-            target_fps=job.target_fps,
-            target_gop=job.target_gop,
-            progress=job.progress,
-            status=job.status,
-            error_message=job.error_message,
-            output_size_bytes=job.output_size_bytes,
-            final_selected_profile=initial_profile,
-        )
         job.final_selected_profile = initial_profile
         try:
             initial_quality = self._run_quality_check(job, cancel_event)
@@ -486,6 +478,20 @@ class Encoder:
                 )
                 return initial_result
 
+        initial_state = _RetainedOutputState(
+            encode_plan=initial_plan,
+            target_video_bitrate_kbps=job.target_video_bitrate_kbps,
+            target_fps=job.target_fps,
+            target_gop=job.target_gop,
+            progress=job.progress,
+            status=job.status,
+            error_message=job.error_message,
+            output_size_bytes=job.output_size_bytes,
+            final_selected_profile=initial_profile,
+            quality_check_status=job.quality_check_status,
+            ssim_score=job.ssim_score,
+            detail_retention_percent=job.detail_retention_percent,
+        )
         job.quality_retry_reason = retry_reason
         self._emit_quality_event(
             quality_event_callback,
@@ -507,8 +513,8 @@ class Encoder:
             backup.move_best_to_backup()
         except OSError as exc:
             logging.warning("Unable to back up Best output before quality retry: %s", exc)
-            job.quality_check_status = QUALITY_STATUS_RETRY_FAILED
             self._restore_retained_state(job, initial_state)
+            job.quality_check_status = QUALITY_STATUS_RETRY_FAILED
             self._emit_quality_event(
                 quality_event_callback,
                 job,
@@ -592,6 +598,12 @@ class Encoder:
             restore_error = backup.restore_best()
             if restore_error:
                 return self._fail(job, restore_error)
+            job.quality_check_status = QUALITY_STATUS_RETRY_FAILED
+            self._emit_quality_event(
+                quality_event_callback,
+                job,
+                "message.quality_retry_restored_best",
+            )
             raise
         finally:
             if backup.owns_best and not backup.restore_failed:
@@ -632,6 +644,9 @@ class Encoder:
         job.error_message = state.error_message
         job.output_size_bytes = state.output_size_bytes
         job.final_selected_profile = state.final_selected_profile
+        job.quality_check_status = state.quality_check_status
+        job.ssim_score = state.ssim_score
+        job.detail_retention_percent = state.detail_retention_percent
 
     @staticmethod
     def _record_quality_result(job: VideoJob, result: QualityCheckResult) -> None:
