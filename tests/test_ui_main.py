@@ -172,6 +172,53 @@ class AutoDetailFallbackTests(unittest.TestCase):
 
         encoder.encode.assert_called_once()
 
+    def test_worker_localizes_quality_events_emitted_by_encoder(self):
+        window = self.make_window()
+        info = self.make_info()
+        encoder = Mock()
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source_path = Path(temporary_directory) / "source.mp4"
+            source_path.touch()
+            job = VideoJob(
+                input_path=source_path,
+                output_path=Path(temporary_directory) / "out.mp4",
+                encoding_mode=DEFAULT_ENCODING_MODE,
+            )
+
+            def encode_with_quality_event(*args, **kwargs):
+                callback = kwargs.get("quality_event_callback")
+                self.assertIsNotNone(callback)
+                callback(
+                    job,
+                    "message.quality_passed",
+                    {"name": source_path.name, "ssim": "0.960", "detail": "90.0"},
+                )
+                return CompressionResult(job=job, status="success", output_info=info)
+
+            encoder.encode.side_effect = encode_with_quality_event
+            with (
+                patch("ui_main.Encoder", return_value=encoder),
+                patch("ui_main.probe_video", return_value=info),
+                patch("ui_main.write_report", return_value=Path(temporary_directory) / "report.csv"),
+            ):
+                window._worker([job], Path(temporary_directory), overwrite=False, detect_silence_enabled=False)
+
+        queued_logs = []
+        while not window.ui_queue.empty():
+            event = window.ui_queue.get_nowait()
+            if event[0] == "log":
+                queued_logs.append(event[1])
+        self.assertIn(
+            window.localizer.t(
+                "message.quality_passed",
+                name=source_path.name,
+                ssim="0.960",
+                detail="90.0",
+            ),
+            queued_logs,
+        )
+
     def test_start_compression_resets_quality_audit_state_before_batch_rerun(self):
         class Value:
             def __init__(self, value):

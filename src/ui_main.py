@@ -418,6 +418,7 @@ class CompressorWindow(tk.Tk):
                     progress_callback=lambda active_job, progress, base=index: self._progress_from_worker(
                         active_job, progress, base, total
                     ),
+                    quality_event_callback=self._quality_event_from_worker,
                 )
                 self.results.append(result)
                 self.ui_queue.put(("job", job))
@@ -584,6 +585,14 @@ class CompressorWindow(tk.Tk):
         self.ui_queue.put(("current", progress * 100))
         self.ui_queue.put(("total", (completed_base + progress) / total * 100))
         self.ui_queue.put(("job", job))
+
+    def _quality_event_from_worker(
+        self,
+        _job: VideoJob,
+        message_key: str,
+        values: dict[str, object],
+    ) -> None:
+        self.ui_queue.put(("log", self.localizer.t(message_key, **values)))
 
     def _poll_queue(self) -> None:
         try:

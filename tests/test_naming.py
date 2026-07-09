@@ -6,7 +6,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from encoder import build_output_path, build_ffmpeg_args, build_ffmpeg_passlog_path, build_ffmpeg_two_pass_args
+from encoder import (
+    build_ffmpeg_args,
+    build_ffmpeg_passlog_path,
+    build_ffmpeg_two_pass_args,
+    build_output_path,
+    build_quality_backup_path,
+)
 from models import H265EncodePlan, VideoInfo
 from settings import (
     MODE_H265_PRODUCTION_BEST_DETAIL,
@@ -21,6 +27,16 @@ from settings import (
 
 
 class NamingTests(unittest.TestCase):
+    def test_quality_backup_path_is_hidden_and_skips_existing_candidates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "campaign.mp4"
+            first_candidate = Path(temp_dir) / ".campaign.quality-backup.mp4"
+            first_candidate.write_bytes(b"unrelated-existing-file")
+
+            backup = build_quality_backup_path(output)
+
+        self.assertEqual(backup, Path(temp_dir) / ".campaign.quality-backup-2.mp4")
+
     def test_build_output_path_preserves_original_name_with_mp4_extension(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
