@@ -172,6 +172,51 @@ class AutoDetailFallbackTests(unittest.TestCase):
 
         encoder.encode.assert_called_once()
 
+    def test_start_compression_resets_quality_audit_state_before_batch_rerun(self):
+        class Value:
+            def __init__(self, value):
+                self.value = value
+
+            def get(self):
+                return self.value
+
+            def set(self, value):
+                self.value = value
+
+        window = self.make_window()
+        source_path = Path("/tmp/source.mp4")
+        job = VideoJob(
+            input_path=source_path,
+            output_path=Path("/tmp/out.mp4"),
+            encoding_mode=MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS,
+            quality_check_status="quality_warning",
+            ssim_score=0.93,
+            detail_retention_percent=79.0,
+            quality_retry_count=1,
+            quality_retry_reason="detail_below_threshold",
+            final_selected_profile="best_detail_2pass",
+        )
+        window.jobs_by_path = {source_path: job}
+        window.output_dir_var = Value("/tmp/output")
+        window.overwrite_var = Value(False)
+        window.detect_silence_var = Value(False)
+        window.current_progress_var = Value(10)
+        window.total_progress_var = Value(10)
+        window.encoding_mode_code = MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS
+        window._set_running = Mock()
+        window._refresh_job = Mock()
+
+        with patch("ui_main.threading.Thread") as thread:
+            window.start_compression()
+
+        thread.return_value.start.assert_called_once()
+        self.assertEqual(job.quality_check_status, "not_run")
+        self.assertIsNone(job.ssim_score)
+        self.assertIsNone(job.detail_retention_percent)
+        self.assertEqual(job.quality_retry_count, 0)
+        self.assertEqual(job.quality_retry_reason, "")
+        self.assertEqual(job.final_selected_profile, "")
+
 
 if __name__ == "__main__":
     unittest.main()

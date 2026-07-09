@@ -31,6 +31,7 @@ from settings import (
     DEFAULT_ENCODING_MODE,
     DEFAULT_OUTPUT_FOLDER_NAME,
     ENCODING_PRESETS,
+    QUALITY_STATUS_NOT_RUN,
     STATUS_CANCELLED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -302,6 +303,12 @@ class CompressorWindow(tk.Tk):
             job.scene_change_rate = 0.0
             job.target_fps = None
             job.target_gop = None
+            job.quality_check_status = QUALITY_STATUS_NOT_RUN
+            job.ssim_score = None
+            job.detail_retention_percent = None
+            job.quality_retry_count = 0
+            job.quality_retry_reason = ""
+            job.final_selected_profile = ""
             self._refresh_job(job)
 
         self.worker_thread = threading.Thread(

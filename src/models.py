@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from settings import DEFAULT_ENCODING_MODE, STATUS_PENDING
+from settings import DEFAULT_ENCODING_MODE, QUALITY_STATUS_NOT_RUN, STATUS_PENDING
 
 
 @dataclass
@@ -72,6 +72,12 @@ class VideoJob:
     scene_change_rate: float = 0.0
     target_fps: float | None = None
     target_gop: int | None = None
+    quality_check_status: str = QUALITY_STATUS_NOT_RUN
+    ssim_score: float | None = None
+    detail_retention_percent: float | None = None
+    quality_retry_count: int = 0
+    quality_retry_reason: str = ""
+    final_selected_profile: str = ""
 
 
 @dataclass
