@@ -290,6 +290,18 @@ class CompressorWindow(tk.Tk):
             job.content_complexity = ""
             job.content_complexity_score = 0.0
             job.target_video_bitrate_kbps = None
+            job.h265_encode_plan = None
+            job.auto_selected_profile = ""
+            job.auto_risk_score = 0.0
+            job.auto_risk_reasons = ""
+            job.source_video_bitrate_kbps = None
+            job.source_fps = 0.0
+            job.peak_complexity_score = 0.0
+            job.small_detail_score = 0.0
+            job.peak_motion_score = 0.0
+            job.scene_change_rate = 0.0
+            job.target_fps = None
+            job.target_gop = None
             self._refresh_job(job)
 
         self.worker_thread = threading.Thread(
@@ -515,6 +527,10 @@ class CompressorWindow(tk.Tk):
             job.auto_risk_reasons = f"analysis_failed:{str(exc)[:120]}"
             job.source_video_bitrate_kbps = job.info.video_bit_rate_kbps or job.info.format_bit_rate_kbps
             job.source_fps = job.info.fps
+            job.peak_complexity_score = 0.0
+            job.small_detail_score = 0.0
+            job.peak_motion_score = 0.0
+            job.scene_change_rate = 0.0
             job.target_video_bitrate_kbps = plan.target_video_bitrate_kbps
             job.target_fps = plan.target_fps
             job.target_gop = plan.gop

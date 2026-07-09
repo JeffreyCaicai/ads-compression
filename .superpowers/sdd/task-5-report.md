@@ -24,3 +24,20 @@ self-review Findings
 
 Concerns
 - No additional concerns at this slice. I did not add tests beyond the brief because this task intentionally defers direct UI worker coverage.
+
+Review Fix Follow-up
+- Fixed the stale Auto Detail job-state issue in `start_compression()` by resetting every Auto Detail field before a queued `VideoJob` is reused: `h265_encode_plan`, `auto_selected_profile`, `auto_risk_score`, `auto_risk_reasons`, `source_video_bitrate_kbps`, `source_fps`, `peak_complexity_score`, `small_detail_score`, `peak_motion_score`, `scene_change_rate`, `target_fps`, and `target_gop`.
+- Fixed the Auto Detail analysis failure path in `_analyze_job_auto_detail()` so failed analyses now clear the untrusted detail metrics (`peak_complexity_score`, `small_detail_score`, `peak_motion_score`, `scene_change_rate`) while still populating the fallback best-detail 2-pass plan fields.
+
+Mac Verification
+- Command: `python3 -m unittest discover -s tests -v`
+  - Result: PASS
+  - Output summary: `Ran 51 tests in 0.548s` and `OK`
+
+Files Updated for Review Fix
+- `src/ui_main.py`
+- `.superpowers/sdd/task-5-report.md`
+- `.superpowers/sdd/task-5-fix-report.md`
+
+Review Fix Concerns
+- No additional concerns. The fix is scoped to the reviewer findings and the full requested unit test suite passed.
