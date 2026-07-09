@@ -501,6 +501,8 @@ class CompressorWindow(tk.Tk):
             analysis = analyze_production_detail(
                 self.ffmpeg_paths.ffmpeg,
                 job.input_path,
+                source_width=job.info.width,
+                source_height=job.info.height,
                 duration_sec=job.info.duration_sec,
             )
             decision = choose_auto_detail_plan(job.info, analysis, job.input_path)

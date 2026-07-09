@@ -49,6 +49,12 @@ class ProductionDetailAnalysis:
     sampled_frames: int
 
 
+@dataclass(frozen=True)
+class SampleSegment:
+    start_sec: float
+    duration_sec: float
+
+
 def build_sample_args(ffmpeg_path: Path, input_path: Path, duration_sec: float) -> list[str]:
     sample_seconds = max(1.0, min(duration_sec or SAMPLE_MAX_SECONDS, SAMPLE_MAX_SECONDS))
     return [
@@ -77,27 +83,57 @@ def build_sample_args(ffmpeg_path: Path, input_path: Path, duration_sec: float) 
     ]
 
 
-def build_production_detail_sample_args(ffmpeg_path: Path, input_path: Path, duration_sec: float) -> list[str]:
-    sample_seconds = max(
-        1.0,
-        min(duration_sec or PRODUCTION_SAMPLE_MAX_SECONDS, PRODUCTION_SAMPLE_MAX_SECONDS),
+def _positive_even(value: float) -> int:
+    rounded = max(2, int(round(value)))
+    return rounded if rounded % 2 == 0 else rounded + 1
+
+
+def production_sample_dimensions(source_width: int, source_height: int) -> tuple[int, int]:
+    if source_width <= 0 or source_height <= 0:
+        return PRODUCTION_SAMPLE_WIDTH, PRODUCTION_SAMPLE_HEIGHT
+    if source_width >= source_height:
+        return PRODUCTION_SAMPLE_WIDTH, _positive_even(PRODUCTION_SAMPLE_WIDTH * source_height / source_width)
+    return _positive_even(PRODUCTION_SAMPLE_WIDTH * source_width / source_height), PRODUCTION_SAMPLE_WIDTH
+
+
+def production_sample_segments(duration_sec: float) -> tuple[SampleSegment, ...]:
+    duration = max(0.0, duration_sec)
+    if duration <= PRODUCTION_SAMPLE_MAX_SECONDS:
+        return (SampleSegment(0.0, duration),)
+    segment_duration = 10.0
+    middle_start = max(0.0, duration / 2.0 - segment_duration / 2.0)
+    end_start = max(0.0, duration - segment_duration)
+    return (
+        SampleSegment(0.0, segment_duration),
+        SampleSegment(middle_start, segment_duration),
+        SampleSegment(end_start, segment_duration),
     )
+
+
+def build_production_detail_sample_args(
+    ffmpeg_path: Path,
+    input_path: Path,
+    source_width: int,
+    source_height: int,
+    segment: SampleSegment,
+) -> list[str]:
+    sample_width, sample_height = production_sample_dimensions(source_width, source_height)
     return [
         str(ffmpeg_path),
         "-hide_banner",
         "-loglevel",
         "error",
+        "-ss",
+        f"{segment.start_sec:.3f}",
         "-i",
         str(input_path),
         "-t",
-        f"{sample_seconds:.3f}",
+        f"{segment.duration_sec:.3f}",
         "-an",
         "-vf",
         (
             f"fps={PRODUCTION_SAMPLE_FPS},"
-            f"scale={PRODUCTION_SAMPLE_WIDTH}:{PRODUCTION_SAMPLE_HEIGHT}:"
-            "force_original_aspect_ratio=decrease:flags=fast_bilinear,"
-            f"pad={PRODUCTION_SAMPLE_WIDTH}:{PRODUCTION_SAMPLE_HEIGHT}:(ow-iw)/2:(oh-ih)/2,"
+            f"scale={sample_width}:{sample_height}:flags=lanczos,"
             "format=gray"
         ),
         "-f",
@@ -132,22 +168,38 @@ def analyze_content(
 def analyze_production_detail(
     ffmpeg_path: Path,
     input_path: Path,
+    source_width: int,
+    source_height: int,
     duration_sec: float,
 ) -> ProductionDetailAnalysis:
-    args = build_production_detail_sample_args(ffmpeg_path, input_path, duration_sec)
-    completed = subprocess.run(
-        args,
-        capture_output=True,
-        startupinfo=startupinfo_for_windows(),
-        timeout=SAMPLE_TIMEOUT_SECONDS,
-        check=False,
-    )
-    if completed.returncode != 0:
-        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
-        raise ContentAnalysisError(
-            stderr or f"FFmpeg production detail analysis failed with code {completed.returncode}."
+    raw_segments = []
+    segment_frame_counts = []
+    sample_width, sample_height = production_sample_dimensions(source_width, source_height)
+    frame_size = sample_width * sample_height
+    for segment in production_sample_segments(duration_sec):
+        args = build_production_detail_sample_args(
+            ffmpeg_path, input_path, source_width, source_height, segment
         )
-    return analyze_production_detail_raw_frames(completed.stdout)
+        completed = subprocess.run(
+            args,
+            capture_output=True,
+            startupinfo=startupinfo_for_windows(),
+            timeout=SAMPLE_TIMEOUT_SECONDS,
+            check=False,
+        )
+        if completed.returncode != 0:
+            stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+            raise ContentAnalysisError(
+                stderr or f"FFmpeg production detail analysis failed with code {completed.returncode}."
+            )
+        raw_segments.append(completed.stdout)
+        segment_frame_counts.append(len(completed.stdout) // frame_size)
+    return analyze_production_detail_raw_frames(
+        b"".join(raw_segments),
+        width=sample_width,
+        height=sample_height,
+        segment_frame_counts=tuple(segment_frame_counts),
+    )
 
 
 def analyze_raw_frames(
@@ -190,8 +242,13 @@ def analyze_raw_frames(
     )
 
 
-def analyze_production_detail_raw_frames(raw_video: bytes) -> ProductionDetailAnalysis:
-    frame_size = PRODUCTION_SAMPLE_WIDTH * PRODUCTION_SAMPLE_HEIGHT
+def analyze_production_detail_raw_frames(
+    raw_video: bytes,
+    width: int = PRODUCTION_SAMPLE_WIDTH,
+    height: int = PRODUCTION_SAMPLE_HEIGHT,
+    segment_frame_counts: tuple[int, ...] | None = None,
+) -> ProductionDetailAnalysis:
+    frame_size = width * height
     if len(raw_video) < frame_size:
         raise ContentAnalysisError("No production detail frames were decoded.")
 
@@ -200,12 +257,24 @@ def analyze_production_detail_raw_frames(raw_video: bytes) -> ProductionDetailAn
         raw_video[index * frame_size : (index + 1) * frame_size]
         for index in range(frame_count)
     ]
-    spatial_values = [_production_spatial_complexity(frame) for frame in frames]
-    small_detail_values = [_small_detail_density(frame) for frame in frames]
-    motion_values = [
-        _production_motion_complexity(previous, current)
-        for previous, current in zip(frames, frames[1:])
-    ]
+    spatial_values = [_production_spatial_complexity(frame, width) for frame in frames]
+    small_detail_values = [_small_detail_density(frame, width, height) for frame in frames]
+    if segment_frame_counts is None:
+        segment_frame_counts = (frame_count,)
+    motion_values = []
+    frame_offset = 0
+    for segment_count in segment_frame_counts:
+        segment_end = min(frame_count, frame_offset + max(0, segment_count))
+        motion_values.extend(
+            _production_motion_complexity(previous, current)
+            for previous, current in zip(frames[frame_offset:segment_end], frames[frame_offset + 1 : segment_end])
+        )
+        frame_offset = segment_end
+    if frame_offset < frame_count:
+        motion_values.extend(
+            _production_motion_complexity(previous, current)
+            for previous, current in zip(frames[frame_offset:], frames[frame_offset + 1 :])
+        )
 
     peak_complexity = max(spatial_values or [0.0])
     small_detail = max(small_detail_values or [0.0])
@@ -266,23 +335,23 @@ def _motion_complexity(previous: bytes, current: bytes) -> float:
     return min(100.0, diff / 2.55)
 
 
-def _production_spatial_complexity(frame: bytes) -> float:
-    return _spatial_complexity_with_width(frame, PRODUCTION_SAMPLE_WIDTH)
+def _production_spatial_complexity(frame: bytes, width: int = PRODUCTION_SAMPLE_WIDTH) -> float:
+    return _spatial_complexity_with_width(frame, width)
 
 
 def _production_motion_complexity(previous: bytes, current: bytes) -> float:
     return _motion_complexity(previous, current)
 
 
-def _small_detail_density(frame: bytes) -> float:
+def _small_detail_density(frame: bytes, width: int = PRODUCTION_SAMPLE_WIDTH, height: int = PRODUCTION_SAMPLE_HEIGHT) -> float:
     if not frame:
         return 0.0
     edge_hits = 0
     checks = 0
-    for y in range(1, PRODUCTION_SAMPLE_HEIGHT):
-        row_start = y * PRODUCTION_SAMPLE_WIDTH
-        prev_row_start = (y - 1) * PRODUCTION_SAMPLE_WIDTH
-        for x in range(1, PRODUCTION_SAMPLE_WIDTH):
+    for y in range(1, height):
+        row_start = y * width
+        prev_row_start = (y - 1) * width
+        for x in range(1, width):
             pixel = frame[row_start + x]
             left = frame[row_start + x - 1]
             up = frame[prev_row_start + x]

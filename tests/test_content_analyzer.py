@@ -9,6 +9,7 @@ from content_analyzer import (
     PRODUCTION_SAMPLE_FPS,
     PRODUCTION_SAMPLE_HEIGHT,
     PRODUCTION_SAMPLE_WIDTH,
+    SampleSegment,
     SAMPLE_FPS,
     SAMPLE_HEIGHT,
     SAMPLE_WIDTH,
@@ -16,6 +17,8 @@ from content_analyzer import (
     analyze_raw_frames,
     build_production_detail_sample_args,
     build_sample_args,
+    production_sample_dimensions,
+    production_sample_segments,
 )
 from settings import CONTENT_COMPLEX, CONTENT_SIMPLE, MODE_H265_SMART_AUTO
 
@@ -51,6 +54,31 @@ def production_checkerboard_frames(count: int) -> bytes:
 
 
 class ContentAnalyzerTests(unittest.TestCase):
+    def test_production_sample_dimensions_preserve_company_screen_orientations(self):
+        self.assertEqual(production_sample_dimensions(1920, 1080), (320, 180))
+        self.assertEqual(production_sample_dimensions(1920, 1440), (320, 240))
+        self.assertEqual(production_sample_dimensions(1080, 1920), (180, 320))
+        self.assertEqual(production_sample_dimensions(1080, 2560), (136, 320))
+        self.assertEqual(production_sample_dimensions(1920, 360), (320, 60))
+
+    def test_production_sample_args_use_lanczos_without_padding(self):
+        segment = SampleSegment(0.0, 15.0)
+        args = build_production_detail_sample_args(
+            Path("ffmpeg.exe"), Path("portrait.mp4"), 1080, 1920, segment
+        )
+        vf = args[args.index("-vf") + 1]
+        self.assertIn("scale=180:320:flags=lanczos", vf)
+        self.assertNotIn("pad=", vf)
+
+    def test_short_production_sample_uses_full_duration(self):
+        self.assertEqual(production_sample_segments(15.0), (SampleSegment(0.0, 15.0),))
+
+    def test_long_production_sample_uses_start_middle_and_end(self):
+        self.assertEqual(
+            production_sample_segments(60.0),
+            (SampleSegment(0.0, 10.0), SampleSegment(25.0, 10.0), SampleSegment(50.0, 10.0)),
+        )
+
     def test_static_low_detail_sample_is_simple(self):
         analysis = analyze_raw_frames(
             solid_frames(96, 10),
@@ -94,7 +122,9 @@ class ContentAnalyzerTests(unittest.TestCase):
         self.assertEqual(analysis.target_video_bitrate_kbps, 450)
 
     def test_production_detail_sample_args_use_larger_gray_frames(self):
-        args = build_production_detail_sample_args(Path("ffmpeg.exe"), Path("input.mp4"), duration_sec=15.0)
+        args = build_production_detail_sample_args(
+            Path("ffmpeg.exe"), Path("input.mp4"), 1920, 1080, SampleSegment(0.0, 15.0)
+        )
 
         self.assertIn("-vf", args)
         vf = args[args.index("-vf") + 1]
@@ -117,6 +147,15 @@ class ContentAnalyzerTests(unittest.TestCase):
         self.assertGreaterEqual(analysis.small_detail_score, 65)
         self.assertGreaterEqual(analysis.peak_complexity_score, 60)
         self.assertGreaterEqual(analysis.peak_motion_score, 30)
+
+    def test_production_detail_segment_boundary_does_not_count_as_motion_or_scene_change(self):
+        analysis = analyze_production_detail_raw_frames(
+            production_solid_frames(0, 2) + production_solid_frames(255, 2),
+            segment_frame_counts=(2, 2),
+        )
+
+        self.assertLess(analysis.peak_motion_score, 10)
+        self.assertEqual(analysis.scene_change_rate, 0.0)
 
 
 if __name__ == "__main__":
