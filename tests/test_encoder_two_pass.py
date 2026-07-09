@@ -17,6 +17,8 @@ from quality_check import QualityCheckError, QualityCheckResult
 from settings import (
     MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS,
     MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+    MODE_STANDARD,
+    NO_AUDIO_MESSAGE,
     PROFILE_BEST_DETAIL_2PASS,
     PROFILE_MAXIMUM_DETAIL_2PASS,
     QUALITY_STATUS_CHECK_FAILED,
@@ -28,6 +30,37 @@ from settings import (
 
 
 class EncoderTwoPassTests(unittest.TestCase):
+    def test_encode_rejects_source_without_audio_before_starting_ffmpeg(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            job = VideoJob(
+                input_path=root / "no-audio.mp4",
+                output_path=root / "out.mp4",
+                info=VideoInfo(
+                    width=1920,
+                    height=1080,
+                    duration_sec=10.0,
+                    fps=30.0,
+                    video_codec="h264",
+                    audio_codec=None,
+                    audio_sample_rate=None,
+                    audio_channels=None,
+                    has_audio=False,
+                ),
+                encoding_mode=MODE_STANDARD,
+            )
+
+            with patch("encoder.subprocess.Popen") as popen:
+                result = Encoder(
+                    FFmpegPaths(ffmpeg=Path("ffmpeg.exe"), ffprobe=Path("ffprobe.exe"))
+                ).encode(job, overwrite=True, cancel_event=threading.Event())
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.error_message, NO_AUDIO_MESSAGE)
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(job.error_message, NO_AUDIO_MESSAGE)
+        popen.assert_not_called()
+
     def test_h265_two_pass_mode_runs_two_ffmpeg_passes_and_cleans_passlogs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
