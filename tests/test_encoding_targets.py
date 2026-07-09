@@ -16,6 +16,8 @@ from settings import (
     MODE_H265_SMALL_FILE,
     MODE_H265_SMALL_FILE_COMPLEX,
     MODE_H265_SMALL_FILE_SIMPLE,
+    PROFILE_BEST_DETAIL_2PASS,
+    PROFILE_MAXIMUM_DETAIL_2PASS,
     SUPPORTED_ENCODING_MODES,
     H265_ENCODING_MODES,
     is_h265_auto_detail_mode,
@@ -26,6 +28,10 @@ from settings import (
 
 
 class EncodingTargetTests(unittest.TestCase):
+    def test_auto_detail_profile_constants_are_defined_in_settings(self):
+        self.assertEqual(PROFILE_BEST_DETAIL_2PASS, "best_detail_2pass")
+        self.assertEqual(PROFILE_MAXIMUM_DETAIL_2PASS, "maximum_detail_2pass")
+
     def test_h265_target_bitrate_uses_screen_size_and_content_complexity(self):
         self.assertEqual(target_video_bitrate_kbps(1920, 1080, MODE_H265_SMALL_FILE_SIMPLE), 450)
         self.assertEqual(target_video_bitrate_kbps(1080, 1920, MODE_H265_SMALL_FILE), 1300)

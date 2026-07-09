@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import settings
 from content_analyzer import ProductionDetailAnalysis
 from models import H265EncodePlan, VideoInfo
 from settings import (
@@ -11,15 +10,11 @@ from settings import (
     H265_KEYINT_MIN,
     H265_SC_THRESHOLD,
     MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
+    PROFILE_BEST_DETAIL_2PASS,
+    PROFILE_MAXIMUM_DETAIL_2PASS,
     maximum_detail_target_video_bitrate_kbps,
     target_video_bitrate_kbps,
 )
-
-
-PROFILE_BEST_DETAIL_2PASS = getattr(settings, "PROFILE_BEST_DETAIL_2PASS", "best_detail_2pass")
-PROFILE_MAXIMUM_DETAIL_2PASS = getattr(settings, "PROFILE_MAXIMUM_DETAIL_2PASS", "maximum_detail_2pass")
-settings.PROFILE_BEST_DETAIL_2PASS = PROFILE_BEST_DETAIL_2PASS
-settings.PROFILE_MAXIMUM_DETAIL_2PASS = PROFILE_MAXIMUM_DETAIL_2PASS
 
 AUTO_DETAIL_THRESHOLD = 65.0
 
