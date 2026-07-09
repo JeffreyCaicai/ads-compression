@@ -550,6 +550,308 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
         self.assertEqual(job.final_selected_profile, PROFILE_BEST_DETAIL_2PASS)
         self.assertEqual(event_keys(events), ["message.quality_retry_started", "message.quality_retry_restored_best"])
 
+    def test_unexpected_maximum_plan_exception_after_backup_restores_best(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            best_plan = job.h265_encode_plan
+            attempt = scripted_attempts(job, [("success", b"best-output", job.info)])
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt),
+                patch("encoder.run_quality_check", return_value=failed_quality()),
+                patch(
+                    "encoder.build_maximum_detail_2pass_plan",
+                    side_effect=RuntimeError("maximum plan failed"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "maximum plan failed"):
+                    make_encoder().encode(job, True, threading.Event())
+
+            self.assertTrue(job.output_path.exists())
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
+
+    def test_unexpected_retry_encode_exception_restores_best(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            best_plan = job.h265_encode_plan
+            calls = 0
+
+            def encode_attempt(*_args, **_kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    job.output_path.write_bytes(b"best-output")
+                    job.output_size_bytes = len(b"best-output")
+                    job.status = "success"
+                    job.progress = 1.0
+                    return CompressionResult(job=job, status="success", output_info=job.info)
+                job.output_path.write_bytes(b"partial-maximum")
+                job.output_size_bytes = len(b"partial-maximum")
+                job.status = "processing"
+                job.progress = 0.25
+                raise RuntimeError("retry crashed")
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=encode_attempt),
+                patch("encoder.run_quality_check", return_value=failed_quality()),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "retry crashed"):
+                    make_encoder().encode(job, True, threading.Event())
+
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(job.progress, 1.0)
+            self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
+
+    def test_unexpected_retry_quality_exception_restores_best(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            best_plan = job.h265_encode_plan
+            attempt = scripted_attempts(
+                job,
+                [
+                    ("success", b"best-output", job.info),
+                    ("success", b"maximum-output", job.info),
+                ],
+            )
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt),
+                patch(
+                    "encoder.run_quality_check",
+                    side_effect=[failed_quality(), RuntimeError("unexpected quality failure")],
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "unexpected quality failure"):
+                    make_encoder().encode(job, True, threading.Event())
+
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
+
+    def test_quality_event_callback_exception_does_not_break_retry_transaction(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            attempt = scripted_attempts(
+                job,
+                [
+                    ("success", b"best-output", job.info),
+                    ("success", b"maximum-output", job.info),
+                ],
+            )
+
+            def raising_callback(*_args, **_kwargs):
+                raise RuntimeError("event consumer failed")
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt) as encode,
+                patch("encoder.run_quality_check", side_effect=[failed_quality(), passed_quality()]),
+                patch("encoder.logging.warning") as warning,
+            ):
+                result = make_encoder().encode(
+                    job,
+                    True,
+                    threading.Event(),
+                    quality_event_callback=raising_callback,
+                )
+
+            self.assertEqual(result.status, "success")
+            self.assertEqual(encode.call_count, 2)
+            self.assertEqual(job.output_path.read_bytes(), b"maximum-output")
+            self.assertEqual(job.final_selected_profile, PROFILE_MAXIMUM_DETAIL_2PASS)
+            self.assertGreaterEqual(warning.call_count, 1)
+
+    def test_cancellation_immediately_before_backup_retains_best_without_retry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            cancel_event = threading.Event()
+            attempt = scripted_attempts(
+                job,
+                [
+                    ("success", b"best-output", job.info),
+                    ("success", b"unexpected-maximum", job.info),
+                ],
+            )
+
+            def cancel_on_retry_event(_job, key, _values):
+                if key == "message.quality_retry_started":
+                    cancel_event.set()
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt) as encode,
+                patch("encoder.run_quality_check", return_value=failed_quality()),
+            ):
+                result = make_encoder().encode(
+                    job,
+                    True,
+                    cancel_event,
+                    quality_event_callback=cancel_on_retry_event,
+                )
+
+            self.assertEqual(result.status, "cancelled")
+            self.assertEqual(encode.call_count, 1)
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertEqual(job.quality_retry_count, 0)
+            self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
+
+    def test_cancellation_during_backup_path_selection_is_checked_before_move(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            cancel_event = threading.Event()
+            attempt = scripted_attempts(
+                job,
+                [
+                    ("success", b"best-output", job.info),
+                    ("success", b"unexpected-maximum", job.info),
+                ],
+            )
+
+            def backup_path_then_cancel(output_path):
+                cancel_event.set()
+                return output_path.with_name(".output.quality-backup.mp4")
+
+            replace_calls = []
+            original_replace = Path.replace
+
+            def track_replace(path, target):
+                replace_calls.append((path, target))
+                return original_replace(path, target)
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt) as encode,
+                patch("encoder.run_quality_check", return_value=failed_quality()),
+                patch("encoder.build_quality_backup_path", side_effect=backup_path_then_cancel),
+                patch.object(Path, "replace", autospec=True, side_effect=track_replace),
+            ):
+                result = make_encoder().encode(job, True, cancel_event)
+
+            self.assertEqual(result.status, "cancelled")
+            self.assertEqual(encode.call_count, 1)
+            self.assertEqual(replace_calls, [])
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
+
+    def test_cancellation_immediately_before_retry_restores_best_without_new_process(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            best_plan = job.h265_encode_plan
+            cancel_event = threading.Event()
+            attempt = scripted_attempts(
+                job,
+                [
+                    ("success", b"best-output", job.info),
+                    ("success", b"unexpected-maximum", job.info),
+                ],
+            )
+
+            def plan_then_cancel(info):
+                cancel_event.set()
+                return build_maximum_detail_2pass_plan(info)
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt) as encode,
+                patch("encoder.run_quality_check", return_value=failed_quality()),
+                patch("encoder.build_maximum_detail_2pass_plan", side_effect=plan_then_cancel),
+            ):
+                result = make_encoder().encode(job, True, cancel_event)
+
+            self.assertEqual(result.status, "cancelled")
+            self.assertEqual(encode.call_count, 1)
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(job.quality_retry_count, 0)
+            self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
+
+    def test_restore_failure_preserves_best_backup_and_returns_failed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            attempt = scripted_attempts(
+                job,
+                [
+                    ("success", b"best-output", job.info),
+                    ("failed", b"partial-maximum", None),
+                ],
+            )
+            original_replace = Path.replace
+
+            def replace_with_restore_failure(path, target):
+                if path.name.startswith(".output.quality-backup"):
+                    raise OSError("restore denied")
+                return original_replace(path, target)
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt),
+                patch("encoder.run_quality_check", return_value=failed_quality()),
+                patch.object(Path, "replace", autospec=True, side_effect=replace_with_restore_failure),
+            ):
+                result = make_encoder().encode(job, True, threading.Event())
+
+            backups = list(Path(temp_dir).glob(".*.quality-backup*.mp4"))
+            self.assertEqual(result.status, "failed")
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_bytes(), b"best-output")
+
+    def test_backup_cleanup_exception_restores_best_before_propagating(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            best_plan = job.h265_encode_plan
+            attempt = scripted_attempts(
+                job,
+                [
+                    ("success", b"best-output", job.info),
+                    ("success", b"maximum-output", job.info),
+                ],
+            )
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=attempt),
+                patch("encoder.run_quality_check", side_effect=[failed_quality(), passed_quality()]),
+                patch.object(Path, "unlink", autospec=True, side_effect=OSError("cleanup denied")),
+            ):
+                with self.assertRaisesRegex(OSError, "cleanup denied"):
+                    make_encoder().encode(job, True, threading.Event())
+
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertIs(job.h265_encode_plan, best_plan)
+            self.assertEqual(list(Path(temp_dir).glob(".*.quality-backup*.mp4")), [])
+
+    def test_retry_failure_restores_first_success_progress_status_error_and_size(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
+            calls = 0
+
+            def encode_attempt(*_args, **_kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    job.output_path.write_bytes(b"best-output")
+                    job.output_size_bytes = len(b"best-output")
+                    job.status = "success"
+                    job.error_message = ""
+                    job.progress = 1.0
+                    return CompressionResult(job=job, status="success", output_info=job.info)
+                job.output_path.write_bytes(b"partial-maximum")
+                job.output_size_bytes = len(b"partial-maximum")
+                job.status = "failed"
+                job.error_message = "maximum failed"
+                job.progress = 0.25
+                return CompressionResult(job=job, status="failed", error_message=job.error_message)
+
+            with (
+                patch.object(Encoder, "_encode_h265_two_pass", side_effect=encode_attempt),
+                patch("encoder.run_quality_check", return_value=failed_quality()),
+            ):
+                result = make_encoder().encode(job, True, threading.Event())
+
+            self.assertEqual(result.status, "success")
+            self.assertEqual(job.output_path.read_bytes(), b"best-output")
+            self.assertEqual(job.progress, 1.0)
+            self.assertEqual(job.status, "success")
+            self.assertEqual(job.error_message, "")
+            self.assertEqual(job.output_size_bytes, len(b"best-output"))
+
     def test_non_auto_two_pass_mode_never_runs_quality_check(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)

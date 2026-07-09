@@ -8,7 +8,12 @@ from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from content_analyzer import AnalysisCancelled, ProductionDetailAnalysis, SampleSegment
+from content_analyzer import (
+    AnalysisCancelled,
+    ContentAnalysisError,
+    ProductionDetailAnalysis,
+    SampleSegment,
+)
 from models import VideoInfo
 from quality_check import (
     QualityCheckError,
@@ -144,6 +149,71 @@ class QualityCheckTests(unittest.TestCase):
                     make_video_info(duration_sec=10.0),
                     source_detail=40.0,
                 )
+
+    def test_run_quality_check_normalizes_output_content_analysis_error(self):
+        error = ContentAnalysisError("output detail failed")
+        with (
+            patch("quality_check._run_ssim_process", return_value="SSIM All:0.96"),
+            patch("quality_check.analyze_production_detail", side_effect=error),
+        ):
+            with self.assertRaises(QualityCheckError) as raised:
+                run_quality_check(
+                    Path("ffmpeg"),
+                    Path("source.mp4"),
+                    Path("output.mp4"),
+                    make_video_info(duration_sec=10.0),
+                    source_detail=40.0,
+                )
+
+        self.assertIs(raised.exception.__cause__, error)
+
+    def test_run_quality_check_normalizes_output_analysis_timeout(self):
+        error = subprocess.TimeoutExpired(["ffmpeg"], 5)
+        with (
+            patch("quality_check._run_ssim_process", return_value="SSIM All:0.96"),
+            patch("quality_check.analyze_production_detail", side_effect=error),
+        ):
+            with self.assertRaises(QualityCheckError) as raised:
+                run_quality_check(
+                    Path("ffmpeg"),
+                    Path("source.mp4"),
+                    Path("output.mp4"),
+                    make_video_info(duration_sec=10.0),
+                    source_detail=40.0,
+                )
+
+        self.assertIs(raised.exception.__cause__, error)
+
+    def test_run_quality_check_normalizes_ssim_os_error(self):
+        error = OSError("unable to start SSIM")
+        with patch("quality_check._run_ssim_process", side_effect=error):
+            with self.assertRaises(QualityCheckError) as raised:
+                run_quality_check(
+                    Path("ffmpeg"),
+                    Path("source.mp4"),
+                    Path("output.mp4"),
+                    make_video_info(duration_sec=10.0),
+                    source_detail=40.0,
+                )
+
+        self.assertIs(raised.exception.__cause__, error)
+
+    def test_run_quality_check_preserves_analysis_cancelled(self):
+        error = AnalysisCancelled("cancelled")
+        with (
+            patch("quality_check._run_ssim_process", return_value="SSIM All:0.96"),
+            patch("quality_check.analyze_production_detail", side_effect=error),
+        ):
+            with self.assertRaises(AnalysisCancelled) as raised:
+                run_quality_check(
+                    Path("ffmpeg"),
+                    Path("source.mp4"),
+                    Path("output.mp4"),
+                    make_video_info(duration_sec=10.0),
+                    source_detail=40.0,
+                )
+
+        self.assertIs(raised.exception, error)
 
     def test_ssim_process_cancellation_terminates_then_waits_five_seconds(self):
         cancel_event = threading.Event()

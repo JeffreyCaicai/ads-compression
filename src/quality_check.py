@@ -9,6 +9,7 @@ from pathlib import Path
 
 from content_analyzer import (
     AnalysisCancelled,
+    ContentAnalysisError,
     PROCESS_POLL_INTERVAL_SECONDS,
     PROCESS_TERMINATE_TIMEOUT_SECONDS,
     SampleSegment,
@@ -136,6 +137,32 @@ def run_quality_check(
     source_info: VideoInfo,
     source_detail: float,
     cancel_event: threading.Event | None = None,
+) -> QualityCheckResult:
+    try:
+        return _run_quality_check(
+            ffmpeg_path,
+            source_path,
+            output_path,
+            source_info,
+            source_detail,
+            cancel_event,
+        )
+    except AnalysisCancelled:
+        raise
+    except QualityCheckError:
+        raise
+    except (ContentAnalysisError, subprocess.TimeoutExpired, OSError) as exc:
+        message = str(exc).strip() or exc.__class__.__name__
+        raise QualityCheckError(message) from exc
+
+
+def _run_quality_check(
+    ffmpeg_path: Path,
+    source_path: Path,
+    output_path: Path,
+    source_info: VideoInfo,
+    source_detail: float,
+    cancel_event: threading.Event | None,
 ) -> QualityCheckResult:
     width, height = production_sample_dimensions(source_info.width, source_info.height)
     segment_scores = []
