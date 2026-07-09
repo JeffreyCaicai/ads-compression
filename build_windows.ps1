@@ -12,6 +12,31 @@ if ($runningApp) {
     throw "SignageVideoCompressor.exe is still running. Please close the app window, then run build_windows.ps1 again."
 }
 
+$ffmpegPath = Join-Path $PSScriptRoot "tools\ffmpeg\bin\ffmpeg.exe"
+$ffprobePath = Join-Path $PSScriptRoot "tools\ffmpeg\bin\ffprobe.exe"
+if (-not (Test-Path $ffmpegPath)) {
+    throw "Bundled FFmpeg executable is missing: $ffmpegPath"
+}
+if (-not (Test-Path $ffprobePath)) {
+    throw "Bundled FFprobe executable is missing: $ffprobePath"
+}
+
+$encoders = & $ffmpegPath -hide_banner -encoders 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) {
+    throw "Bundled FFmpeg could not list encoders (exit code $LASTEXITCODE)."
+}
+if ($encoders -notmatch "libx265") {
+    throw "Bundled FFmpeg does not include libx265."
+}
+
+$filters = & $ffmpegPath -hide_banner -filters 2>&1 | Out-String
+if ($LASTEXITCODE -ne 0) {
+    throw "Bundled FFmpeg could not list filters (exit code $LASTEXITCODE)."
+}
+if ($filters -notmatch "ssim") {
+    throw "Bundled FFmpeg does not include the ssim filter."
+}
+
 $distAppDir = ".\dist\SignageVideoCompressor"
 if (Test-Path $distAppDir) {
     try {

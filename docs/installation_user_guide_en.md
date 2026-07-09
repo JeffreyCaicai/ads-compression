@@ -237,6 +237,14 @@ If both commands show version information, check H.265 encoder support:
 
 If the command prints a `libx265` encoder line, FFmpeg is ready for both H.264 and H.265 modes. If not, download a full/release FFmpeg build that includes `libx265`.
 
+Also verify the SSIM quality filter:
+
+```powershell
+.\ffmpeg.exe -hide_banner -filters | findstr ssim
+```
+
+If the command prints an `ssim` filter line, the build can run the H.265 production quality checks. `build_windows.ps1` checks for `ffmpeg.exe`, `ffprobe.exe`, `libx265`, and `ssim` automatically before it installs dependencies or starts PyInstaller. It stops with a clear error if any requirement is missing.
+
 ## 5. Build Owner: Install Project Dependencies
 
 Enter the project directory:
@@ -272,6 +280,8 @@ python -m unittest discover -s tests -v
 ```
 
 If the result shows `OK`, the basic tests passed.
+
+On Windows with both bundled executables present, `test_real_two_pass_profiles_preserve_required_output_properties_and_cleanup` should show `ok`. It creates a temporary two-second source and verifies both H.265 two-pass profiles produce HEVC with the selected frame rate, AAC 48 kHz stereo audio, the `hvc1` MP4 tag, a finite SSIM result, and no retained passlog or quality-backup files. If the bundled Windows executables are absent, that test is explicitly skipped; the packaging preflight will still prevent a build until they are restored.
 
 ## 7. Build Owner: Package the Windows Application
 
