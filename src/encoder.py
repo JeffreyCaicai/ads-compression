@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Callable
 
 from ffmpeg_utils import FFmpegError, probe_video, startupinfo_for_windows, validate_output_file
-from models import CompressionResult, FFmpegPaths, VideoInfo, VideoJob
+from models import CompressionResult, FFmpegPaths, H265EncodePlan, VideoInfo, VideoJob
 from settings import (
     DEFAULT_ENCODING_MODE,
     H265_GOP,
@@ -60,6 +60,7 @@ def build_ffmpeg_args(
     encoding_mode: str = DEFAULT_ENCODING_MODE,
     source_info: VideoInfo | None = None,
     target_video_bitrate_kbps: int | None = None,
+    encode_plan: H265EncodePlan | None = None,
 ) -> list[str]:
     overwrite_flag = "-y" if overwrite else "-y"
     preset = encoding_preset(encoding_mode)
@@ -75,7 +76,15 @@ def build_ffmpeg_args(
         "0:a:0?",
     ]
     if is_h265_mode(encoding_mode):
-        args.extend(_h265_video_args(preset, encoding_mode, source_info, target_video_bitrate_kbps))
+        args.extend(
+            _h265_video_args(
+                preset,
+                encoding_mode,
+                source_info,
+                target_video_bitrate_kbps,
+                encode_plan=encode_plan,
+            )
+        )
     else:
         args.extend(_h264_video_args(preset))
     args.extend(
@@ -115,6 +124,7 @@ def build_ffmpeg_two_pass_args(
     encoding_mode: str = DEFAULT_ENCODING_MODE,
     source_info: VideoInfo | None = None,
     target_video_bitrate_kbps: int | None = None,
+    encode_plan: H265EncodePlan | None = None,
 ) -> list[str]:
     if pass_number not in {1, 2}:
         raise ValueError("pass_number must be 1 or 2")
@@ -139,6 +149,7 @@ def build_ffmpeg_two_pass_args(
             encoding_mode,
             source_info,
             target_video_bitrate_kbps,
+            encode_plan=encode_plan,
             include_mp4_tag=pass_number == 2,
         )
     )
@@ -213,18 +224,33 @@ def _h265_video_args(
     encoding_mode: str,
     source_info: VideoInfo | None,
     target_video_bitrate_kbps_override: int | None,
+    encode_plan: H265EncodePlan | None = None,
     include_mp4_tag: bool = True,
 ) -> list[str]:
     width = source_info.width if source_info else 1920
     height = source_info.height if source_info else 1080
-    target_kbps = target_video_bitrate_kbps_override or target_video_bitrate_kbps(width, height, encoding_mode)
-    maxrate_kbps = round(target_kbps * 1.5)
-    bufsize_kbps = target_kbps * 3
-    x265_params = (
-        f"keyint={H265_GOP}:"
-        f"min-keyint={H265_KEYINT_MIN}:"
-        f"scenecut={H265_SC_THRESHOLD}"
-    )
+    if encode_plan:
+        target_kbps = encode_plan.target_video_bitrate_kbps
+        fps = f"{encode_plan.target_fps:g}"
+        maxrate_kbps = encode_plan.maxrate_kbps
+        bufsize_kbps = encode_plan.bufsize_kbps
+        x265_parts = [
+            f"keyint={encode_plan.gop}",
+            f"min-keyint={encode_plan.keyint_min}",
+            f"scenecut={encode_plan.scenecut}",
+            *encode_plan.x265_params,
+        ]
+    else:
+        target_kbps = target_video_bitrate_kbps_override or target_video_bitrate_kbps(width, height, encoding_mode)
+        fps = preset["fps"]
+        maxrate_kbps = round(target_kbps * 1.5)
+        bufsize_kbps = target_kbps * 3
+        x265_parts = [
+            f"keyint={H265_GOP}",
+            f"min-keyint={H265_KEYINT_MIN}",
+            f"scenecut={H265_SC_THRESHOLD}",
+        ]
+    x265_params = ":".join(x265_parts)
     args = [
         "-c:v",
         "libx265",
@@ -235,7 +261,7 @@ def _h265_video_args(
         "-pix_fmt",
         "yuv420p",
         "-r",
-        preset["fps"],
+        fps,
         "-b:v",
         f"{target_kbps}k",
         "-maxrate",
@@ -291,6 +317,7 @@ class Encoder:
             encoding_mode=job.encoding_mode,
             source_info=job.info,
             target_video_bitrate_kbps=job.target_video_bitrate_kbps,
+            encode_plan=job.h265_encode_plan,
         )
         logging.info("Running ffmpeg: %s", args)
         try:
@@ -327,6 +354,7 @@ class Encoder:
                 encoding_mode=job.encoding_mode,
                 source_info=job.info,
                 target_video_bitrate_kbps=job.target_video_bitrate_kbps,
+                encode_plan=job.h265_encode_plan,
             )
             logging.info("Running ffmpeg first pass: %s", first_pass_args)
             try:
@@ -356,6 +384,7 @@ class Encoder:
                 encoding_mode=job.encoding_mode,
                 source_info=job.info,
                 target_video_bitrate_kbps=job.target_video_bitrate_kbps,
+                encode_plan=job.h265_encode_plan,
             )
             logging.info("Running ffmpeg second pass: %s", second_pass_args)
             try:
@@ -455,6 +484,7 @@ class Encoder:
                 job.info,
                 output_info,
                 encoding_mode=job.encoding_mode,
+                expected_fps=job.target_fps,
             )
         except FFmpegError as exc:
             return self._fail(job, f"输出验证失败：{exc}", stderr_tail=list(stderr_tail))
