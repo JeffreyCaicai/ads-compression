@@ -9,7 +9,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from auto_detail import build_best_detail_2pass_plan, choose_auto_detail_plan
+from auto_detail import AutoDetailDecision, build_best_detail_2pass_plan, choose_auto_detail_plan
 from audio_check import detect_volume
 from content_analyzer import ContentAnalysisError, analyze_content, analyze_production_detail
 from encoder import Encoder, build_output_path
@@ -478,7 +478,7 @@ class CompressorWindow(tk.Tk):
                 )
             )
 
-    def _apply_auto_detail_decision(self, job: VideoJob, decision) -> None:
+    def _apply_auto_detail_decision(self, job: VideoJob, decision: AutoDetailDecision) -> None:
         job.h265_encode_plan = decision.encode_plan
         job.auto_selected_profile = decision.selected_profile
         job.auto_risk_score = decision.risk_score

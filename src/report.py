@@ -10,6 +10,7 @@ from settings import (
     MODE_H265_PRODUCTION_BEST_DETAIL,
     MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     encoding_preset,
+    is_h265_auto_detail_mode,
     is_h265_mode,
     target_fps_for_mode,
     target_video_bitrate_kbps,
@@ -102,17 +103,23 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
         "content_complexity": content_complexity,
         "content_complexity_score": format_number(job.content_complexity_score) if job.content_complexity_score else "",
         "auto_selected_profile": job.auto_selected_profile,
-        "auto_risk_score": format_number(job.auto_risk_score) if job.auto_risk_score else "",
+        "auto_risk_score": format_auto_detail_number(job, job.auto_risk_score),
         "auto_risk_reasons": job.auto_risk_reasons,
         "source_video_bitrate_kbps": str(job.source_video_bitrate_kbps) if job.source_video_bitrate_kbps else "",
         "source_fps": format_number(job.source_fps) if job.source_fps else "",
-        "peak_complexity_score": format_number(job.peak_complexity_score) if job.peak_complexity_score else "",
-        "small_detail_score": format_number(job.small_detail_score) if job.small_detail_score else "",
-        "peak_motion_score": format_number(job.peak_motion_score) if job.peak_motion_score else "",
-        "scene_change_rate": format_number(job.scene_change_rate) if job.scene_change_rate else "",
+        "peak_complexity_score": format_auto_detail_number(job, job.peak_complexity_score),
+        "small_detail_score": format_auto_detail_number(job, job.small_detail_score),
+        "peak_motion_score": format_auto_detail_number(job, job.peak_motion_score),
+        "scene_change_rate": format_auto_detail_number(job, job.scene_change_rate),
         "target_gop": str(job.target_gop) if job.target_gop else "",
         "created_at": result.created_at or datetime.now().isoformat(timespec="seconds"),
     }
+
+
+def format_auto_detail_number(job: VideoJob, value: float | None) -> str:
+    if not is_h265_auto_detail_mode(job.encoding_mode) or value is None:
+        return ""
+    return format_number(value)
 
 
 def format_number(value: float) -> str:
