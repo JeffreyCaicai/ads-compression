@@ -9,8 +9,9 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from auto_detail import build_best_detail_2pass_plan, choose_auto_detail_plan
 from audio_check import detect_volume
-from content_analyzer import ContentAnalysisError, analyze_content
+from content_analyzer import ContentAnalysisError, analyze_content, analyze_production_detail
 from encoder import Encoder, build_output_path
 from ffmpeg_utils import (
     FFmpegError,
@@ -39,6 +40,7 @@ from settings import (
     SUPPORTED_EXTENSIONS,
     WINDOW_SIZE,
     CONTENT_STANDARD,
+    is_h265_auto_detail_mode,
     is_h265_smart_auto_mode,
     target_video_bitrate_kbps,
 )
@@ -373,7 +375,9 @@ class CompressorWindow(tk.Tk):
                     job.audio_status = AUDIO_NORMAL
                 self.ui_queue.put(("job", job))
 
-                if is_h265_smart_auto_mode(job.encoding_mode):
+                if is_h265_auto_detail_mode(job.encoding_mode):
+                    self._analyze_job_auto_detail(job)
+                elif is_h265_smart_auto_mode(job.encoding_mode):
                     self._analyze_job_content(job)
 
                 result = self.encoder.encode(
@@ -458,6 +462,70 @@ class CompressorWindow(tk.Tk):
                         name=job.input_path.name,
                         error=exc,
                         bitrate=job.target_video_bitrate_kbps,
+                    ),
+                )
+            )
+
+    def _apply_auto_detail_decision(self, job: VideoJob, decision) -> None:
+        job.h265_encode_plan = decision.encode_plan
+        job.auto_selected_profile = decision.selected_profile
+        job.auto_risk_score = decision.risk_score
+        job.auto_risk_reasons = decision.risk_reasons
+        job.source_video_bitrate_kbps = decision.source_video_bitrate_kbps
+        job.source_fps = job.info.fps if job.info else 0.0
+        job.peak_complexity_score = decision.analysis.peak_complexity_score
+        job.small_detail_score = decision.analysis.small_detail_score
+        job.peak_motion_score = decision.analysis.peak_motion_score
+        job.scene_change_rate = decision.analysis.scene_change_rate
+        job.target_video_bitrate_kbps = decision.encode_plan.target_video_bitrate_kbps
+        job.target_fps = decision.encode_plan.target_fps
+        job.target_gop = decision.encode_plan.gop
+
+    def _analyze_job_auto_detail(self, job: VideoJob) -> None:
+        assert self.ffmpeg_paths is not None
+        assert job.info is not None
+        self.ui_queue.put(("log", self.localizer.t("message.analyzing_auto_detail", name=job.input_path.name)))
+        try:
+            analysis = analyze_production_detail(
+                self.ffmpeg_paths.ffmpeg,
+                job.input_path,
+                duration_sec=job.info.duration_sec,
+            )
+            decision = choose_auto_detail_plan(job.info, analysis, job.input_path)
+            self._apply_auto_detail_decision(job, decision)
+            self.ui_queue.put(
+                (
+                    "log",
+                    self.localizer.t(
+                        "message.auto_detail_selected",
+                        name=job.input_path.name,
+                        profile=decision.selected_profile,
+                        score=decision.risk_score,
+                        bitrate=decision.encode_plan.target_video_bitrate_kbps,
+                        fps=decision.encode_plan.target_fps,
+                        reasons=decision.risk_reasons,
+                    ),
+                )
+            )
+        except (ContentAnalysisError, subprocess.TimeoutExpired, OSError) as exc:
+            plan = build_best_detail_2pass_plan(job.info)
+            job.h265_encode_plan = plan
+            job.auto_selected_profile = plan.selected_profile
+            job.auto_risk_score = 0.0
+            job.auto_risk_reasons = f"analysis_failed:{str(exc)[:120]}"
+            job.source_video_bitrate_kbps = job.info.video_bit_rate_kbps or job.info.format_bit_rate_kbps
+            job.source_fps = job.info.fps
+            job.target_video_bitrate_kbps = plan.target_video_bitrate_kbps
+            job.target_fps = plan.target_fps
+            job.target_gop = plan.gop
+            self.ui_queue.put(
+                (
+                    "log",
+                    self.localizer.t(
+                        "message.auto_detail_failed",
+                        name=job.input_path.name,
+                        error=exc,
+                        bitrate=plan.target_video_bitrate_kbps,
                     ),
                 )
             )
