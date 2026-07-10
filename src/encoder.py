@@ -713,6 +713,8 @@ class Encoder:
         progress_callback: ProgressCallback | None,
     ) -> CompressionResult:
         assert job.info is not None
+        if job.h265_encode_plan is not None:
+            self._apply_encode_plan(job, job.h265_encode_plan)
         job.status = STATUS_PROCESSING
         job.output_path.parent.mkdir(parents=True, exist_ok=True)
         passlog_path = build_ffmpeg_passlog_path(job.output_path, job.input_path)
