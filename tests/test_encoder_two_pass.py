@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from auto_detail import build_best_detail_2pass_plan, build_maximum_detail_2pass_plan
 from content_analyzer import AnalysisCancelled
-from encoder import Encoder, build_ffmpeg_passlog_path
+from encoder import Encoder, build_ffmpeg_passlog_path, cleanup_passlog_files
 from models import CompressionResult, FFmpegPaths, H265EncodePlan, VideoInfo, VideoJob
 from quality_check import QualityCheckError, QualityCheckResult
 from settings import (
@@ -117,6 +117,26 @@ class EncoderTwoPassTests(unittest.TestCase):
         self.assertFalse(passlog.exists())
         self.assertFalse(passlog.with_name(passlog.name + "-0.log").exists())
         self.assertFalse(passlog.with_name(passlog.name + "-0.log.mbtree").exists())
+
+    def test_cleanup_passlog_files_removes_all_unique_prefix_artifacts(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            passlog = root / ".out_123456789abc_x265_2pass"
+            artifacts = [
+                passlog,
+                passlog.with_name(passlog.name + "-0.log"),
+                passlog.with_name(passlog.name + "-0.log.mbtree"),
+                passlog.with_name(passlog.name + "-0.log.cutree"),
+                passlog.with_name(passlog.name + "-0.log.temp"),
+            ]
+            unrelated = root / ".other_x265_2pass-0.log.cutree"
+            for artifact in [*artifacts, unrelated]:
+                artifact.write_text("temporary", encoding="utf-8")
+
+            cleanup_passlog_files(passlog)
+
+            self.assertFalse(any(artifact.exists() for artifact in artifacts))
+            self.assertTrue(unrelated.exists())
 
     def test_h265_two_pass_mode_passes_job_encode_plan_to_ffmpeg_args(self):
         with tempfile.TemporaryDirectory() as temp_dir:

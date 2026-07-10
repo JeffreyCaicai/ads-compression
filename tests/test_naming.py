@@ -165,6 +165,7 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-profile:v") + 1], "main")
         self.assertEqual(args[args.index("-tag:v") + 1], "hvc1")
         self.assertEqual(args[args.index("-r") + 1], "25")
+        self.assertEqual(args[args.index("-vf") + 1], "fps=25")
         self.assertEqual(args[args.index("-b:v") + 1], "1300k")
         self.assertEqual(args[args.index("-maxrate") + 1], "1950k")
         self.assertEqual(args[args.index("-bufsize") + 1], "3900k")
@@ -287,6 +288,7 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-b:v") + 1], "1800k")
         self.assertEqual(args[args.index("-pass") + 1], "1")
         self.assertEqual(args[args.index("-passlogfile") + 1], str(passlog))
+        self.assertEqual(args[args.index("-vf") + 1], "fps=25")
         self.assertIn("-an", args)
         self.assertEqual(args[args.index("-f") + 1], "null")
         self.assertIn(args[-1], {"NUL", "/dev/null"})
@@ -328,6 +330,7 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(args[args.index("-tag:v") + 1], "hvc1")
         self.assertEqual(args[args.index("-pass") + 1], "2")
         self.assertEqual(args[args.index("-passlogfile") + 1], str(passlog))
+        self.assertEqual(args[args.index("-vf") + 1], "fps=25")
         self.assertEqual(args[args.index("-c:a") + 1], "aac")
         self.assertEqual(args[args.index("-b:a") + 1], "96k")
         self.assertEqual(args[args.index("-movflags") + 1], "+faststart")
@@ -383,6 +386,7 @@ class NamingTests(unittest.TestCase):
 
         self.assertEqual(args[args.index("-b:v") + 1], "3200k")
         self.assertEqual(args[args.index("-r") + 1], "30")
+        self.assertEqual(args[args.index("-vf") + 1], "fps=30")
         self.assertEqual(args[args.index("-maxrate") + 1], "6400k")
         self.assertEqual(args[args.index("-bufsize") + 1], "12800k")
         params = args[args.index("-x265-params") + 1]
