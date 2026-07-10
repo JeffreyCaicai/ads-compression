@@ -336,6 +336,8 @@ def _h265_video_args(
         preset["profile"],
         "-pix_fmt",
         "yuv420p",
+        "-vf",
+        f"fps={fps}",
         "-r",
         fps,
         "-b:v",
@@ -913,13 +915,14 @@ def parse_progress(value: str, duration_sec: float) -> float:
 
 
 def cleanup_passlog_files(passlog_path: Path) -> None:
-    candidates = [
-        passlog_path,
-        passlog_path.with_name(passlog_path.name + "-0.log"),
-        passlog_path.with_name(passlog_path.name + "-0.log.mbtree"),
-        passlog_path.with_name(passlog_path.name + ".log"),
-        passlog_path.with_name(passlog_path.name + ".log.mbtree"),
-    ]
+    try:
+        candidates = [
+            candidate
+            for candidate in passlog_path.parent.iterdir()
+            if candidate.name.startswith(passlog_path.name)
+        ]
+    except FileNotFoundError:
+        return
     for candidate in candidates:
         try:
             candidate.unlink()
