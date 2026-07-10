@@ -6,24 +6,33 @@ import os
 import subprocess
 import threading
 from collections import deque
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from auto_detail import build_maximum_detail_2pass_plan
+from content_analyzer import AnalysisCancelled
 from ffmpeg_utils import FFmpegError, probe_video, startupinfo_for_windows, validate_output_file
 from models import CompressionResult, FFmpegPaths, H265EncodePlan, VideoInfo, VideoJob
+from quality_check import QualityCheckError, QualityCheckResult, run_quality_check
 from settings import (
     DEFAULT_ENCODING_MODE,
     H265_GOP,
     H265_KEYINT_MIN,
     H265_SC_THRESHOLD,
     NO_AUDIO_MESSAGE,
+    PROFILE_BEST_DETAIL_2PASS,
+    PROFILE_MAXIMUM_DETAIL_2PASS,
     PROBE_ERROR_MESSAGE,
+    QUALITY_STATUS_CHECK_FAILED,
+    QUALITY_STATUS_RETRY_FAILED,
     STATUS_CANCELLED,
     STATUS_FAILED,
     STATUS_PROCESSING,
     STATUS_SUCCESS,
     encoding_preset,
+    is_h265_auto_detail_mode,
     is_h265_mode,
     is_h265_two_pass_mode,
     target_video_bitrate_kbps,
@@ -31,6 +40,62 @@ from settings import (
 
 
 ProgressCallback = Callable[[VideoJob, float], None]
+QualityEventCallback = Callable[[VideoJob, str, dict[str, object]], None]
+
+
+@dataclass(frozen=True)
+class _RetainedOutputState:
+    encode_plan: H265EncodePlan
+    target_video_bitrate_kbps: int | None
+    target_fps: float | None
+    target_gop: int | None
+    progress: float
+    status: str
+    error_message: str
+    output_size_bytes: int
+    final_selected_profile: str
+    quality_check_status: str
+    ssim_score: float | None
+    detail_retention_percent: float | None
+
+
+class _QualityBackupTransaction:
+    def __init__(
+        self,
+        output_path: Path,
+        backup_path: Path,
+        restore_state: Callable[[], None],
+    ) -> None:
+        self.output_path = output_path
+        self.backup_path = backup_path
+        self.restore_state = restore_state
+        self.owns_best = False
+        self.restore_failed = False
+
+    def move_best_to_backup(self) -> None:
+        self.output_path.replace(self.backup_path)
+        self.owns_best = True
+
+    def restore_best(self) -> str:
+        if not self.owns_best:
+            return ""
+        try:
+            self.backup_path.replace(self.output_path)
+        except OSError as exc:
+            self.restore_failed = True
+            return f"Unable to restore Best output after quality retry: {exc}"
+        self.owns_best = False
+        self.restore_state()
+        return ""
+
+    def retain_maximum(self) -> None:
+        if not self.owns_best:
+            return
+        try:
+            self.backup_path.unlink()
+        except FileNotFoundError:
+            pass
+        self.owns_best = False
 
 
 def build_output_path(
@@ -112,6 +177,17 @@ def build_ffmpeg_passlog_path(output_path: Path, input_path: Path) -> Path:
     token = f"{input_path.resolve()}->{output_path.resolve()}".encode("utf-8")
     digest = hashlib.sha1(token).hexdigest()[:12]
     return output_path.parent / f".{output_path.stem}_{digest}_x265_2pass"
+
+
+def build_quality_backup_path(output_path: Path) -> Path:
+    candidate = output_path.with_name(f".{output_path.stem}.quality-backup{output_path.suffix}")
+    counter = 2
+    while candidate.exists():
+        candidate = output_path.with_name(
+            f".{output_path.stem}.quality-backup-{counter}{output_path.suffix}"
+        )
+        counter += 1
+    return candidate
 
 
 def build_ffmpeg_two_pass_args(
@@ -299,11 +375,20 @@ class Encoder:
         overwrite: bool,
         cancel_event: threading.Event,
         progress_callback: ProgressCallback | None = None,
+        quality_event_callback: QualityEventCallback | None = None,
     ) -> CompressionResult:
         if not job.info:
             return self._fail(job, PROBE_ERROR_MESSAGE)
         if not job.info.has_audio:
             return self._fail(job, NO_AUDIO_MESSAGE)
+        if is_h265_auto_detail_mode(job.encoding_mode):
+            return self._encode_auto_detail_with_quality(
+                job,
+                overwrite,
+                cancel_event,
+                progress_callback,
+                quality_event_callback,
+            )
         if is_h265_two_pass_mode(job.encoding_mode):
             return self._encode_h265_two_pass(job, overwrite, cancel_event, progress_callback)
 
@@ -330,6 +415,293 @@ class Encoder:
         except FFmpegError as exc:
             return self._fail(job, str(exc))
         return self._complete_after_ffmpeg(job, return_code, stderr_tail, cancelled)
+
+    def _encode_auto_detail_with_quality(
+        self,
+        job: VideoJob,
+        overwrite: bool,
+        cancel_event: threading.Event,
+        progress_callback: ProgressCallback | None,
+        quality_event_callback: QualityEventCallback | None = None,
+    ) -> CompressionResult:
+        assert job.info is not None
+        initial_plan = job.h265_encode_plan
+        if initial_plan is None:
+            return self._fail(job, "Auto Detail encode plan is missing.")
+
+        initial_result = self._encode_h265_two_pass(
+            job,
+            overwrite,
+            cancel_event,
+            progress_callback,
+        )
+        if initial_result.status != "success":
+            return initial_result
+
+        initial_profile = initial_plan.selected_profile
+        job.final_selected_profile = initial_profile
+        try:
+            initial_quality = self._run_quality_check(job, cancel_event)
+        except AnalysisCancelled:
+            return self._cancelled_result(job, initial_result.ffmpeg_stderr_tail)
+        except QualityCheckError as exc:
+            retry_reason = str(exc)
+            self._record_quality_check_error(job)
+            job.quality_retry_reason = retry_reason
+            self._emit_quality_event(
+                quality_event_callback,
+                job,
+                "message.quality_check_failed",
+                reason=retry_reason,
+            )
+            if initial_profile != PROFILE_BEST_DETAIL_2PASS:
+                return initial_result
+        else:
+            self._record_quality_result(job, initial_quality)
+            if initial_quality.passed:
+                job.quality_retry_reason = ""
+                self._emit_quality_result(
+                    quality_event_callback,
+                    job,
+                    "message.quality_passed",
+                    initial_quality,
+                )
+                return initial_result
+            retry_reason = initial_quality.reason
+            job.quality_retry_reason = retry_reason
+            if initial_profile != PROFILE_BEST_DETAIL_2PASS:
+                self._emit_quality_result(
+                    quality_event_callback,
+                    job,
+                    "message.quality_warning",
+                    initial_quality,
+                )
+                return initial_result
+
+        initial_state = _RetainedOutputState(
+            encode_plan=initial_plan,
+            target_video_bitrate_kbps=job.target_video_bitrate_kbps,
+            target_fps=job.target_fps,
+            target_gop=job.target_gop,
+            progress=job.progress,
+            status=job.status,
+            error_message=job.error_message,
+            output_size_bytes=job.output_size_bytes,
+            final_selected_profile=initial_profile,
+            quality_check_status=job.quality_check_status,
+            ssim_score=job.ssim_score,
+            detail_retention_percent=job.detail_retention_percent,
+        )
+        job.quality_retry_reason = retry_reason
+        self._emit_quality_event(
+            quality_event_callback,
+            job,
+            "message.quality_retry_started",
+            reason=retry_reason,
+        )
+        if cancel_event.is_set():
+            return self._cancelled_result(job, initial_result.ffmpeg_stderr_tail)
+
+        backup = _QualityBackupTransaction(
+            job.output_path,
+            build_quality_backup_path(job.output_path),
+            lambda: self._restore_retained_state(job, initial_state),
+        )
+        if cancel_event.is_set():
+            return self._cancelled_result(job, initial_result.ffmpeg_stderr_tail)
+        try:
+            backup.move_best_to_backup()
+        except OSError as exc:
+            logging.warning("Unable to back up Best output before quality retry: %s", exc)
+            self._restore_retained_state(job, initial_state)
+            job.quality_check_status = QUALITY_STATUS_RETRY_FAILED
+            self._emit_quality_event(
+                quality_event_callback,
+                job,
+                "message.quality_retry_restored_best",
+            )
+            return initial_result
+
+        try:
+            maximum_plan = build_maximum_detail_2pass_plan(job.info)
+            self._apply_encode_plan(job, maximum_plan)
+            if cancel_event.is_set():
+                restore_error = backup.restore_best()
+                if restore_error:
+                    return self._fail(job, restore_error)
+                self._emit_quality_event(
+                    quality_event_callback,
+                    job,
+                    "message.quality_retry_restored_best",
+                )
+                return self._cancelled_result(job, initial_result.ffmpeg_stderr_tail)
+
+            job.quality_retry_count = 1
+            retry_result = self._encode_h265_two_pass(
+                job,
+                overwrite,
+                cancel_event,
+                progress_callback,
+            )
+            if retry_result.status != "success":
+                restore_error = backup.restore_best()
+                if restore_error:
+                    return self._fail(job, restore_error, retry_result.ffmpeg_stderr_tail)
+                self._emit_quality_event(
+                    quality_event_callback,
+                    job,
+                    "message.quality_retry_restored_best",
+                )
+                if retry_result.status == "cancelled":
+                    return self._cancelled_result(job, retry_result.ffmpeg_stderr_tail)
+                job.quality_check_status = QUALITY_STATUS_RETRY_FAILED
+                return initial_result
+
+            job.final_selected_profile = PROFILE_MAXIMUM_DETAIL_2PASS
+            try:
+                retry_quality = self._run_quality_check(job, cancel_event)
+            except AnalysisCancelled:
+                restore_error = backup.restore_best()
+                if restore_error:
+                    return self._fail(job, restore_error, retry_result.ffmpeg_stderr_tail)
+                self._emit_quality_event(
+                    quality_event_callback,
+                    job,
+                    "message.quality_retry_restored_best",
+                )
+                return self._cancelled_result(job, retry_result.ffmpeg_stderr_tail)
+            except QualityCheckError as exc:
+                self._record_quality_check_error(job)
+                self._emit_quality_event(
+                    quality_event_callback,
+                    job,
+                    "message.quality_check_failed",
+                    reason=str(exc),
+                )
+            else:
+                self._record_quality_result(job, retry_quality)
+                self._emit_quality_result(
+                    quality_event_callback,
+                    job,
+                    "message.quality_passed" if retry_quality.passed else "message.quality_warning",
+                    retry_quality,
+                )
+
+            backup.retain_maximum()
+            self._emit_quality_event(
+                quality_event_callback,
+                job,
+                "message.quality_retry_kept_maximum",
+            )
+            return retry_result
+        except Exception as exc:
+            restore_error = backup.restore_best()
+            if restore_error:
+                return self._fail(job, restore_error)
+            logging.warning(
+                "Quality retry failed for %s; restored Best output: %s",
+                job.input_path,
+                exc,
+                exc_info=True,
+            )
+            job.quality_check_status = QUALITY_STATUS_RETRY_FAILED
+            self._emit_quality_event(
+                quality_event_callback,
+                job,
+                "message.quality_retry_restored_best",
+            )
+            return initial_result
+        finally:
+            if backup.owns_best and not backup.restore_failed:
+                restore_error = backup.restore_best()
+                if restore_error:
+                    logging.error("Quality retry cleanup could not restore Best: %s", restore_error)
+
+    def _run_quality_check(
+        self,
+        job: VideoJob,
+        cancel_event: threading.Event,
+    ) -> QualityCheckResult:
+        assert job.info is not None
+        return run_quality_check(
+            self.paths.ffmpeg,
+            job.input_path,
+            job.output_path,
+            job.info,
+            job.small_detail_score,
+            cancel_event=cancel_event,
+        )
+
+    @staticmethod
+    def _apply_encode_plan(job: VideoJob, plan: H265EncodePlan) -> None:
+        job.h265_encode_plan = plan
+        job.target_video_bitrate_kbps = plan.target_video_bitrate_kbps
+        job.target_fps = plan.target_fps
+        job.target_gop = plan.gop
+
+    @staticmethod
+    def _restore_retained_state(job: VideoJob, state: _RetainedOutputState) -> None:
+        job.h265_encode_plan = state.encode_plan
+        job.target_video_bitrate_kbps = state.target_video_bitrate_kbps
+        job.target_fps = state.target_fps
+        job.target_gop = state.target_gop
+        job.progress = state.progress
+        job.status = state.status
+        job.error_message = state.error_message
+        job.output_size_bytes = state.output_size_bytes
+        job.final_selected_profile = state.final_selected_profile
+        job.quality_check_status = state.quality_check_status
+        job.ssim_score = state.ssim_score
+        job.detail_retention_percent = state.detail_retention_percent
+
+    @staticmethod
+    def _record_quality_result(job: VideoJob, result: QualityCheckResult) -> None:
+        job.quality_check_status = result.status
+        job.ssim_score = result.ssim_score
+        job.detail_retention_percent = result.detail_retention_percent
+
+    @staticmethod
+    def _record_quality_check_error(job: VideoJob) -> None:
+        job.quality_check_status = QUALITY_STATUS_CHECK_FAILED
+        job.ssim_score = None
+        job.detail_retention_percent = None
+
+    @classmethod
+    def _emit_quality_result(
+        cls,
+        callback: QualityEventCallback | None,
+        job: VideoJob,
+        key: str,
+        result: QualityCheckResult,
+    ) -> None:
+        detail = "n/a" if result.detail_retention_percent is None else f"{result.detail_retention_percent:.1f}"
+        cls._emit_quality_event(
+            callback,
+            job,
+            key,
+            ssim=f"{result.ssim_score:.3f}",
+            detail=detail,
+            reason=result.reason,
+        )
+
+    @staticmethod
+    def _emit_quality_event(
+        callback: QualityEventCallback | None,
+        job: VideoJob,
+        key: str,
+        **values: object,
+    ) -> None:
+        if callback:
+            try:
+                callback(job, key, {"name": job.input_path.name, **values})
+            except Exception as exc:
+                logging.warning(
+                    "Quality event callback failed for %s (%s): %s",
+                    job.input_path,
+                    key,
+                    exc,
+                    exc_info=True,
+                )
 
     def _encode_h265_two_pass(
         self,

@@ -26,6 +26,9 @@ class FFmpegError(RuntimeError):
     pass
 
 
+_DISPLAY_ASPECT_RATIO_REL_TOLERANCE = 0.01
+
+
 def executable_name(name: str) -> str:
     return f"{name}.exe" if os.name == "nt" else name
 
@@ -105,6 +108,13 @@ def parse_fraction(value: str | None) -> float:
         return 0.0
 
 
+def parse_video_fps(video_stream: dict[str, Any]) -> float:
+    average = parse_fraction(video_stream.get("avg_frame_rate"))
+    if average > 0:
+        return average
+    return parse_fraction(video_stream.get("r_frame_rate"))
+
+
 def parse_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
@@ -126,6 +136,84 @@ def parse_bitrate_kbps(value: Any) -> int | None:
     return round(parsed / 1000)
 
 
+def parse_aspect_ratio(value: Any) -> float:
+    if value is None:
+        return 0.0
+    return parse_fraction(str(value).strip().replace(":", "/"))
+
+
+def parse_rotation_degrees(video_stream: dict[str, Any]) -> int:
+    rotation_values = [
+        side_data.get("rotation")
+        for side_data in video_stream.get("side_data_list") or []
+        if isinstance(side_data, dict)
+    ]
+    tags = video_stream.get("tags") or {}
+    if isinstance(tags, dict):
+        rotation_values.extend((tags.get("rotate"), tags.get("ROTATE")))
+    for value in rotation_values:
+        if value is None:
+            continue
+        try:
+            return int(round(float(value))) % 360
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def display_dimensions(
+    width: int,
+    height: int,
+    sample_aspect_ratio: Any,
+    display_aspect_ratio: Any,
+    rotation_degrees: int,
+) -> tuple[int, int]:
+    if width <= 0 or height <= 0:
+        return width, height
+
+    display_width = width
+    display_height = height
+    sample_ratio = parse_aspect_ratio(sample_aspect_ratio)
+    display_ratio = parse_aspect_ratio(display_aspect_ratio)
+    if sample_ratio > 0 and abs(sample_ratio - 1.0) < 1e-6:
+        display_width = width
+    elif display_ratio > 0:
+        display_width = max(1, round(height * display_ratio))
+    elif sample_ratio > 0:
+        display_width = max(1, round(width * sample_ratio))
+
+    if rotation_degrees % 360 in {90, 270}:
+        display_width, display_height = display_height, display_width
+    return display_width, display_height
+
+
+def _display_orientation(dimensions: tuple[int, int]) -> str:
+    width, height = dimensions
+    if width == height:
+        return "square"
+    return "landscape" if width > height else "portrait"
+
+
+def _has_equivalent_display_geometry(source_info: VideoInfo, output_info: VideoInfo) -> bool:
+    source_display = source_info.display_dimensions
+    output_display = output_info.display_dimensions
+    source_coded_area = source_info.width * source_info.height
+    output_coded_area = output_info.width * output_info.height
+    if output_coded_area < source_coded_area:
+        return False
+    if output_display == source_display:
+        return True
+    if min(*source_display, *output_display) <= 0:
+        return False
+    if _display_orientation(output_display) != _display_orientation(source_display):
+        return False
+
+    source_aspect = source_display[0] / source_display[1]
+    output_aspect = output_display[0] / output_display[1]
+    relative_aspect_error = abs(output_aspect / source_aspect - 1.0)
+    return relative_aspect_error <= _DISPLAY_ASPECT_RATIO_REL_TOLERANCE
+
+
 def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
     streams = payload.get("streams") or []
     video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
@@ -137,12 +225,24 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
     duration = parse_float(format_data.get("duration"))
     if duration <= 0:
         duration = parse_float(video_stream.get("duration"))
+    width = int(video_stream.get("width") or 0)
+    height = int(video_stream.get("height") or 0)
+    sample_aspect_ratio = video_stream.get("sample_aspect_ratio")
+    display_aspect_ratio = video_stream.get("display_aspect_ratio")
+    rotation_degrees = parse_rotation_degrees(video_stream)
+    display_width, display_height = display_dimensions(
+        width,
+        height,
+        sample_aspect_ratio,
+        display_aspect_ratio,
+        rotation_degrees,
+    )
 
     return VideoInfo(
-        width=int(video_stream.get("width") or 0),
-        height=int(video_stream.get("height") or 0),
+        width=width,
+        height=height,
         duration_sec=duration,
-        fps=parse_fraction(video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")),
+        fps=parse_video_fps(video_stream),
         video_codec=str(video_stream.get("codec_name") or ""),
         audio_codec=str(audio_stream.get("codec_name")) if audio_stream else None,
         audio_sample_rate=parse_int(audio_stream.get("sample_rate")) if audio_stream else None,
@@ -152,6 +252,11 @@ def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
         video_bit_rate_kbps=parse_bitrate_kbps(video_stream.get("bit_rate")),
         audio_bit_rate_kbps=parse_bitrate_kbps(audio_stream.get("bit_rate")) if audio_stream else None,
         format_bit_rate_kbps=parse_bitrate_kbps(format_data.get("bit_rate")),
+        sample_aspect_ratio=str(sample_aspect_ratio) if sample_aspect_ratio else None,
+        display_aspect_ratio=str(display_aspect_ratio) if display_aspect_ratio else None,
+        rotation_degrees=rotation_degrees,
+        display_width=display_width,
+        display_height=display_height,
     )
 
 
@@ -203,7 +308,7 @@ def validate_output_file(
         errors.append(f"输出视频编码不是 h264：{output_info.video_codec}")
     if output_info.pix_fmt != TARGET_PIX_FMT:
         errors.append(f"输出像素格式不是 {TARGET_PIX_FMT}：{output_info.pix_fmt}")
-    if (output_info.width, output_info.height) != (source_info.width, source_info.height):
+    if not _has_equivalent_display_geometry(source_info, output_info):
         errors.append("输出分辨率与源文件不一致。")
     target_fps = expected_fps or target_fps_for_mode(encoding_mode)
     if abs(output_info.fps - target_fps) > 0.5:

@@ -237,6 +237,14 @@ cd path\to\signage_video_compressor\tools\ffmpeg\bin
 
 如果命令输出中能看到 `libx265` 编码器，说明 FFmpeg 可用于 H.264 和 H.265 模式。如果没有，请下载包含 `libx265` 的 full/release FFmpeg build。
 
+还要验证 SSIM 质量检查滤镜：
+
+```powershell
+.\ffmpeg.exe -hide_banner -filters | findstr ssim
+```
+
+如果输出中包含 `ssim` 滤镜，说明该版本可运行 H.265 正式投放模式的质量检查。`build_windows.ps1` 会在安装依赖和启动 PyInstaller 之前，自动检查 `ffmpeg.exe`、`ffprobe.exe`、`libx265` 和 `ssim`。任一项缺失时，脚本会停止并显示明确错误。
+
 ## 5. 打包人员：安装项目依赖
 
 进入项目目录：
@@ -272,6 +280,8 @@ python -m unittest discover -s tests -v
 ```
 
 如果显示 `OK`，说明基础功能测试通过。
+
+在 Windows 且两个打包的可执行文件都存在时，`test_real_two_pass_profiles_preserve_required_output_properties_and_cleanup` 应显示 `ok`。该测试会创建一个临时的两秒视频，并验证两个 H.265 两遍编码方案均输出 HEVC、所选帧率、AAC 48 kHz 双声道、`hvc1` MP4 标签、有限的 SSIM 结果，以及没有残留 passlog 或质量备份文件。如果打包的 Windows 可执行文件不存在，该测试会明确显示为 skipped；但打包预检仍会阻止继续生成安装包，直到补齐文件。
 
 ## 7. 打包人员：生成 Windows 程序
 

@@ -9,9 +9,14 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from auto_detail import AutoDetailDecision, build_best_detail_2pass_plan, choose_auto_detail_plan
+from auto_detail import (
+    AutoDetailDecision,
+    build_best_detail_2pass_plan,
+    choose_auto_detail_plan,
+    estimate_source_video_bitrate_kbps,
+)
 from audio_check import detect_volume
-from content_analyzer import ContentAnalysisError, analyze_content, analyze_production_detail
+from content_analyzer import AnalysisCancelled, ContentAnalysisError, analyze_content, analyze_production_detail
 from encoder import Encoder, build_output_path
 from ffmpeg_utils import (
     FFmpegError,
@@ -31,6 +36,7 @@ from settings import (
     DEFAULT_ENCODING_MODE,
     DEFAULT_OUTPUT_FOLDER_NAME,
     ENCODING_PRESETS,
+    QUALITY_STATUS_NOT_RUN,
     STATUS_CANCELLED,
     STATUS_FAILED,
     STATUS_PENDING,
@@ -302,6 +308,12 @@ class CompressorWindow(tk.Tk):
             job.scene_change_rate = 0.0
             job.target_fps = None
             job.target_gop = None
+            job.quality_check_status = QUALITY_STATUS_NOT_RUN
+            job.ssim_score = None
+            job.detail_retention_percent = None
+            job.quality_retry_count = 0
+            job.quality_retry_reason = ""
+            job.final_selected_profile = ""
             self._refresh_job(job)
 
         self.worker_thread = threading.Thread(
@@ -392,6 +404,18 @@ class CompressorWindow(tk.Tk):
                 elif is_h265_smart_auto_mode(job.encoding_mode):
                     self._analyze_job_content(job)
 
+                if is_h265_auto_detail_mode(job.encoding_mode) and self.cancel_event.is_set():
+                    self._mark_cancelled(job)
+                    self.ui_queue.put(("job", job))
+                    self.results.append(
+                        CompressionResult(
+                            job=job,
+                            status="cancelled",
+                            error_message=self.localizer.t("message.user_cancelled"),
+                        )
+                    )
+                    continue
+
                 result = self.encoder.encode(
                     job,
                     overwrite=overwrite,
@@ -399,11 +423,22 @@ class CompressorWindow(tk.Tk):
                     progress_callback=lambda active_job, progress, base=index: self._progress_from_worker(
                         active_job, progress, base, total
                     ),
+                    quality_event_callback=self._quality_event_from_worker,
                 )
                 self.results.append(result)
                 self.ui_queue.put(("job", job))
                 if result.status == "failed":
                     self.ui_queue.put(("log", f"{job.input_path.name}: {result.error_message}"))
+            except AnalysisCancelled:
+                self._mark_cancelled(job)
+                self.results.append(
+                    CompressionResult(
+                        job=job,
+                        status="cancelled",
+                        error_message=self.localizer.t("message.user_cancelled"),
+                    )
+                )
+                self.ui_queue.put(("job", job))
             except FFmpegError as exc:
                 job.status = STATUS_FAILED
                 job.error_message = self.localizer.t("error.probe")
@@ -497,11 +532,15 @@ class CompressorWindow(tk.Tk):
         assert self.ffmpeg_paths is not None
         assert job.info is not None
         self.ui_queue.put(("log", self.localizer.t("message.analyzing_auto_detail", name=job.input_path.name)))
+        display_width, display_height = job.info.display_dimensions
         try:
             analysis = analyze_production_detail(
                 self.ffmpeg_paths.ffmpeg,
                 job.input_path,
+                source_width=display_width,
+                source_height=display_height,
                 duration_sec=job.info.duration_sec,
+                cancel_event=self.cancel_event,
             )
             decision = choose_auto_detail_plan(job.info, analysis, job.input_path)
             self._apply_auto_detail_decision(job, decision)
@@ -519,13 +558,15 @@ class CompressorWindow(tk.Tk):
                     ),
                 )
             )
+        except AnalysisCancelled:
+            raise
         except (ContentAnalysisError, subprocess.TimeoutExpired, OSError) as exc:
             plan = build_best_detail_2pass_plan(job.info)
             job.h265_encode_plan = plan
             job.auto_selected_profile = plan.selected_profile
             job.auto_risk_score = 0.0
             job.auto_risk_reasons = f"analysis_failed:{str(exc)[:120]}"
-            job.source_video_bitrate_kbps = job.info.video_bit_rate_kbps or job.info.format_bit_rate_kbps
+            job.source_video_bitrate_kbps = estimate_source_video_bitrate_kbps(job.info, job.input_path)
             job.source_fps = job.info.fps
             job.peak_complexity_score = 0.0
             job.small_detail_score = 0.0
@@ -550,6 +591,14 @@ class CompressorWindow(tk.Tk):
         self.ui_queue.put(("current", progress * 100))
         self.ui_queue.put(("total", (completed_base + progress) / total * 100))
         self.ui_queue.put(("job", job))
+
+    def _quality_event_from_worker(
+        self,
+        _job: VideoJob,
+        message_key: str,
+        values: dict[str, object],
+    ) -> None:
+        self.ui_queue.put(("log", self.localizer.t(message_key, **values)))
 
     def _poll_queue(self) -> None:
         try:

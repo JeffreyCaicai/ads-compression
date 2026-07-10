@@ -7,6 +7,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from auto_detail import (
+    build_best_detail_2pass_plan,
+    build_maximum_detail_2pass_plan,
     choose_auto_detail_plan,
     estimate_source_video_bitrate_kbps,
 )
@@ -22,6 +24,9 @@ def info(
     video_bit_rate_kbps=None,
     audio_bit_rate_kbps=None,
     format_bit_rate_kbps=None,
+    display_width=None,
+    display_height=None,
+    rotation_degrees=0,
 ):
     return VideoInfo(
         width=width,
@@ -36,6 +41,9 @@ def info(
         video_bit_rate_kbps=video_bit_rate_kbps,
         audio_bit_rate_kbps=audio_bit_rate_kbps,
         format_bit_rate_kbps=format_bit_rate_kbps,
+        display_width=display_width,
+        display_height=display_height,
+        rotation_degrees=rotation_degrees,
     )
 
 
@@ -78,6 +86,33 @@ class AutoDetailTests(unittest.TestCase):
         self.assertIn("high_pixel_screen", decision.risk_reasons)
         self.assertIn("source_bitrate_11759k", decision.risk_reasons)
         self.assertGreaterEqual(decision.risk_score, 65)
+
+    def test_rotated_portrait_uses_display_targets_and_portrait_risk(self):
+        rotated = info(
+            width=1920,
+            height=1080,
+            fps=25.0,
+            video_bit_rate_kbps=1800,
+            display_width=1080,
+            display_height=1920,
+            rotation_degrees=90,
+        )
+        analysis = ProductionDetailAnalysis(
+            peak_complexity_score=20.0,
+            small_detail_score=10.0,
+            peak_motion_score=8.0,
+            scene_change_rate=0.0,
+            sampled_frames=10,
+        )
+
+        best_plan = build_best_detail_2pass_plan(rotated)
+        maximum_plan = build_maximum_detail_2pass_plan(rotated)
+        decision = choose_auto_detail_plan(rotated, analysis)
+
+        self.assertEqual(best_plan.target_video_bitrate_kbps, 1800)
+        self.assertEqual(maximum_plan.target_video_bitrate_kbps, 2600)
+        self.assertIn("portrait_screen", decision.risk_reasons)
+        self.assertEqual(decision.risk_score, 8.0)
 
     def test_missing_stream_bitrate_can_be_estimated_from_file_size_and_audio(self):
         with tempfile.TemporaryDirectory() as temp_dir:

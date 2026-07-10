@@ -49,6 +49,12 @@ REPORT_FIELDS = [
     "peak_motion_score",
     "scene_change_rate",
     "target_gop",
+    "quality_check_status",
+    "ssim_score",
+    "detail_retention_percent",
+    "quality_retry_count",
+    "quality_retry_reason",
+    "final_selected_profile",
     "created_at",
 ]
 
@@ -115,6 +121,14 @@ def row_from_result(result: CompressionResult) -> dict[str, str]:
         "peak_motion_score": format_auto_detail_number(job, job.peak_motion_score, has_auto_detail_audit),
         "scene_change_rate": format_auto_detail_number(job, job.scene_change_rate, has_auto_detail_audit),
         "target_gop": str(job.target_gop) if job.target_gop else "",
+        "quality_check_status": job.quality_check_status,
+        "ssim_score": format_number(job.ssim_score) if job.ssim_score is not None else "",
+        "detail_retention_percent": format_number(job.detail_retention_percent)
+        if job.detail_retention_percent is not None
+        else "",
+        "quality_retry_count": str(job.quality_retry_count),
+        "quality_retry_reason": job.quality_retry_reason,
+        "final_selected_profile": job.final_selected_profile,
         "created_at": result.created_at or datetime.now().isoformat(timespec="seconds"),
     }
 

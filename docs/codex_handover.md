@@ -14,13 +14,18 @@ The app is built for non-technical operations users. They select video files or 
 Latest application code commit before this handoff document:
 
 ```text
-0a45905 Preserve source filename for compressed output
+daf0c4a Exercise Auto Detail retry smoke path
 ```
 
 Recent important application commits:
 
 ```text
 148d24b Add Codex handover guide
+8e43196 Add Auto Detail output quality checks
+5c71b57 Record Auto Detail quality audit results
+b10222f Retry low quality Auto Detail outputs safely
+14f1b4e Restore Best quality audit state on rollback
+fa08b62 Verify bundled FFmpeg production capabilities
 0a45905 Preserve source filename for compressed output
 463dde5 Add high motion quality mode
 540ded6 Fix FFmpeg lookup in PyInstaller bundle
@@ -46,6 +51,9 @@ signage_video_compressor/
     models.py
     ffmpeg_utils.py
     encoder.py
+    auto_detail.py
+    content_analyzer.py
+    quality_check.py
     audio_check.py
     report.py
     settings.py
@@ -56,6 +64,12 @@ signage_video_compressor/
     test_localization.py
     test_naming.py
     test_report.py
+    test_auto_detail.py
+    test_content_analyzer.py
+    test_encoder_two_pass.py
+    test_encoding_targets.py
+    test_quality_check.py
+    test_real_ffmpeg_smoke.py
   tools/
     ffmpeg/
       bin/
@@ -173,11 +187,7 @@ Run tests from repo root:
 python -m unittest discover -s tests -v
 ```
 
-Expected current result:
-
-```text
-17 tests, OK
-```
+The full suite includes a Windows-only real FFmpeg smoke class. On macOS it is expected to skip because it requires bundled Windows `ffmpeg.exe` and `ffprobe.exe`; a skip does not mean the Windows smoke test ran.
 
 Build Windows app:
 
@@ -225,6 +235,13 @@ The GUI has a `Quality Mode` dropdown:
 Standard - General Compression
 High Motion - Better Motion Quality
 Screen Safe - High Motion
+H.265 Production - Best Detail
+H.265 Production - Best Detail (2-pass)
+H.265 Production - Auto Detail (2-pass)
+H.265 Smart Auto - Analyze Content
+H.265 Small File - Standard Content
+H.265 Small File - Complex Motion
+H.265 Small File - Simple/Static
 ```
 
 Standard mode:
@@ -259,6 +276,16 @@ refs 2
 ```
 
 Screen Safe - High Motion was added after compressed files played correctly on desktop computers but showed blocks, glitches, or frame corruption during the first second on signage screens. It does not replace High Motion; it lowers signage hardware decoder pressure for problematic high-motion starts.
+
+### Auto Detail Quality Closed Loop
+
+Auto Detail selects Best Detail (2-pass) or Maximum Detail (2-pass) from a production-detail analysis. FFprobe DAR, SAR and rotation metadata, with rotation normalized to 0-359 degrees, determine display geometry for production analysis, Best/Maximum bitrate targets, `portrait_screen` risk and output quality sampling. Source coded width/height remain available for reporting, while FFmpeg autorotation or anamorphic conversion may produce different output display dimensions. Structural validation accepts that representation change only when display orientation matches, relative display-aspect error is at most 1%, and output coded pixel area is no smaller than the source. Production samples are 2fps grayscale frames with a 320-pixel long side: display-landscape uses `320 x proportional-even-height`; display-portrait uses `proportional-even-width x 320`. Sources longer than 30 seconds are sampled in three independent 10-second segments at start, middle and end. The analysis preserves segment boundaries for motion, evaluates 1-second and 2-second rolling windows, and records spatial, tiled-detail and motion P90/P95 values alongside peak and scene-change measures.
+
+After a structurally valid Auto Detail output is encoded, the same time segments are compared at 2fps with FFmpeg SSIM and an output detail analysis. The public quality-check path applies the same display geometry to direct callers and encoder calls; FFmpeg autorotates each input before both are scaled to the common sample dimensions. SSIM must be at least `0.94`. When source detail is at least `20`, output detail retention must be at least `80%`; otherwise retention is recorded but does not create a warning. Analysis and SSIM subprocesses honour cancellation, terminate first and kill after a five-second wait when necessary.
+
+Best Detail can retry Maximum Detail once for a quality warning or a quality-check error. An initial Maximum Detail output, and a retried Maximum Detail output, never retry again. A quality warning means the output passed structural validation but needs human review; it is not a compression failure. A quality-check error is recorded separately. In either case, a structurally valid Maximum Detail output is retained for review.
+
+Before retrying, the successful Best Detail output is moved to a hidden same-directory `.quality-backup` path. Retry encode failure, quality-check cancellation, cancellation before/during retry, or an unexpected retry exception restores the Best file and selected Best fields: plan, bitrate/FPS/GOP targets, progress, status/error, output size, final profile, and initial SSIM/detail-retention values. It deliberately keeps `quality_retry_count` and `quality_retry_reason` as retry audit facts; a retry encode failure sets `quality_check_status` to `quality_retry_failed`. A retry-time quality-check error instead sets `quality_check_status` to `quality_check_failed` and retains the structurally valid Maximum output. A failed restore is an actual failure. If Maximum Detail is retained, the backup is deleted. Non-Auto Detail two-pass modes retain their existing behavior and do not run this quality loop.
 
 Code:
 
@@ -359,6 +386,26 @@ audio_status
 encoding_mode
 crf
 preset
+target_video_bitrate_kbps
+target_fps
+content_complexity
+content_complexity_score
+auto_selected_profile
+auto_risk_score
+auto_risk_reasons
+source_video_bitrate_kbps
+source_fps
+peak_complexity_score
+small_detail_score
+peak_motion_score
+scene_change_rate
+target_gop
+quality_check_status
+ssim_score
+detail_retention_percent
+quality_retry_count
+quality_retry_reason
+final_selected_profile
 created_at
 ```
 
@@ -368,6 +415,11 @@ created_at
 standard
 high_motion
 screen_safe_high_motion
+h265_production_best_detail
+h265_production_best_detail_2pass
+h265_production_auto_detail_2pass
+h265_smart_auto
+h265_small_file
 ```
 
 Code:
@@ -397,6 +449,7 @@ dist\SignageVideoCompressor\tools\ffmpeg\bin\
 5. High Motion improves motion detail but creates larger files.
 6. Screen Safe - High Motion is for files that play correctly on a computer but show first-second corruption on signage hardware.
 7. If PyInstaller fails with `Access is denied` while removing `dist\SignageVideoCompressor`, close the running app and any Explorer windows inside `dist`, then build again.
+8. `build_windows.ps1` performs a preflight before dependency installation and PyInstaller: it requires bundled `ffmpeg.exe` and `ffprobe.exe`, and checks FFmpeg for `libx265` and `ssim`. Resolve those failures using a suitable Windows FFmpeg build before building.
 
 ## Recommended Manual QA Before Sending A Build
 
@@ -418,6 +471,8 @@ dist\SignageVideoCompressor\SignageVideoCompressor.exe
 9. Confirm CSV has `encoding_mode`, `crf`, and `preset`.
 10. Confirm output audio is present.
 11. Confirm no-audio source fails clearly.
+12. Exercise Auto Detail with a source that selects Best Detail; confirm the CSV includes the quality fields and review any warning as a valid output requiring human inspection.
+13. Where practical, exercise an Auto Detail retry/cancel path and confirm Best Detail is restored when the retry cannot complete.
 
 ## Suggested Next Development Tasks
 
@@ -462,5 +517,5 @@ git push
 ## Good Starting Prompt For New Codex Session
 
 ```text
-We are continuing development on JeffreyCaicai/ads-compression, a Python Tkinter Windows desktop app for signage video compression. Please read docs/codex_handover.md, docs/design.md, README.md, then inspect git status and recent commits before making changes. Preserve the current behavior: default English UI, Standard, High Motion, and Screen Safe - High Motion quality modes, output filename preserves source stem, FFmpeg lookup supports PyInstaller _internal, audio is mandatory, and tests should pass with python -m unittest discover -s tests -v.
+We are continuing development on JeffreyCaicai/ads-compression, a Python Tkinter Windows desktop app for signage video compression. Please read docs/codex_handover.md, docs/design.md, README.md, then inspect git status and recent commits before making changes. Preserve the current behavior: default English UI; all H.264 and H.265 modes; source-stem output naming with source overwrite prevention; FFmpeg lookup including PyInstaller _internal; mandatory audio; Auto Detail's orientation-aware start/middle/end analysis, one-retry quality loop, warning semantics, backup restore and CSV audit fields; Windows build preflight; and the Windows-gated real FFmpeg smoke test. Run python -m unittest discover -s tests -v before completing work; a skipped smoke test on macOS is not proof of Windows execution.
 ```

@@ -453,6 +453,107 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(rows[0]["peak_motion_score"], "")
         self.assertEqual(rows[0]["scene_change_rate"], "")
 
+    def test_write_report_records_quality_audit_outcomes_in_stable_columns(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            info = VideoInfo(
+                width=1920,
+                height=1080,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+            )
+            jobs = [
+                VideoJob(
+                    input_path=temp_path / "passed.mp4",
+                    output_path=temp_path / "passed_out.mp4",
+                    info=info,
+                    encoding_mode="h265_production_auto_detail_2pass",
+                    auto_selected_profile="maximum_detail_2pass",
+                    quality_check_status="passed",
+                    ssim_score=0.968,
+                    detail_retention_percent=91.5,
+                    quality_retry_count=0,
+                    quality_retry_reason="",
+                    final_selected_profile="maximum_detail_2pass",
+                ),
+                VideoJob(
+                    input_path=temp_path / "warning.mp4",
+                    output_path=temp_path / "warning_out.mp4",
+                    info=info,
+                    encoding_mode="h265_production_auto_detail_2pass",
+                    auto_selected_profile="maximum_detail_2pass",
+                    quality_check_status="quality_warning",
+                    ssim_score=0.93,
+                    detail_retention_percent=79.0,
+                    quality_retry_count=1,
+                    quality_retry_reason="detail_below_threshold",
+                    final_selected_profile="best_detail_2pass",
+                ),
+                VideoJob(
+                    input_path=temp_path / "failed.mp4",
+                    output_path=temp_path / "failed_out.mp4",
+                    info=info,
+                    encoding_mode="h265_production_auto_detail_2pass",
+                    auto_selected_profile="best_detail_2pass",
+                    quality_check_status="quality_check_failed",
+                    quality_retry_count=0,
+                    quality_retry_reason="ssim unavailable",
+                    final_selected_profile="best_detail_2pass",
+                ),
+            ]
+            results = [CompressionResult(job=job, status="success", output_info=info) for job in jobs]
+
+            report_path = write_report(temp_path, results)
+
+            with report_path.open("r", encoding="utf-8-sig", newline="") as file_obj:
+                rows = list(csv.DictReader(file_obj))
+
+        self.assertEqual(
+            REPORT_FIELDS[REPORT_FIELDS.index("target_gop") + 1 : REPORT_FIELDS.index("created_at")],
+            [
+                "quality_check_status",
+                "ssim_score",
+                "detail_retention_percent",
+                "quality_retry_count",
+                "quality_retry_reason",
+                "final_selected_profile",
+            ],
+        )
+        self.assertEqual(rows[0]["quality_check_status"], "passed")
+        self.assertEqual(rows[0]["ssim_score"], "0.968")
+        self.assertEqual(rows[0]["detail_retention_percent"], "91.5")
+        self.assertEqual(rows[0]["quality_retry_count"], "0")
+        self.assertEqual(rows[0]["final_selected_profile"], "maximum_detail_2pass")
+        self.assertEqual(rows[1]["quality_retry_reason"], "detail_below_threshold")
+        self.assertEqual(rows[1]["final_selected_profile"], "best_detail_2pass")
+        self.assertNotEqual(rows[1]["auto_selected_profile"], rows[1]["final_selected_profile"])
+        self.assertEqual(rows[2]["quality_check_status"], "quality_check_failed")
+        self.assertEqual(rows[2]["ssim_score"], "")
+        self.assertEqual(rows[2]["detail_retention_percent"], "")
+        self.assertEqual(rows[2]["quality_retry_count"], "0")
+
+    def test_write_report_uses_not_run_defaults_and_blank_optional_quality_metrics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            job = VideoJob(input_path=temp_path / "source.mp4", output_path=temp_path / "out.mp4")
+
+            report_path = write_report(temp_path, [CompressionResult(job=job, status="success")])
+
+            with report_path.open("r", encoding="utf-8-sig", newline="") as file_obj:
+                row = next(csv.DictReader(file_obj))
+
+        self.assertEqual(row["quality_check_status"], "not_run")
+        self.assertEqual(row["ssim_score"], "")
+        self.assertEqual(row["detail_retention_percent"], "")
+        self.assertEqual(row["quality_retry_count"], "0")
+        self.assertEqual(row["quality_retry_reason"], "")
+        self.assertEqual(row["final_selected_profile"], "")
+
 
 if __name__ == "__main__":
     unittest.main()
