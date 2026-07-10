@@ -26,6 +26,9 @@ class FFmpegError(RuntimeError):
     pass
 
 
+_DISPLAY_ASPECT_RATIO_REL_TOLERANCE = 0.01
+
+
 def executable_name(name: str) -> str:
     return f"{name}.exe" if os.name == "nt" else name
 
@@ -184,6 +187,33 @@ def display_dimensions(
     return display_width, display_height
 
 
+def _display_orientation(dimensions: tuple[int, int]) -> str:
+    width, height = dimensions
+    if width == height:
+        return "square"
+    return "landscape" if width > height else "portrait"
+
+
+def _has_equivalent_display_geometry(source_info: VideoInfo, output_info: VideoInfo) -> bool:
+    source_display = source_info.display_dimensions
+    output_display = output_info.display_dimensions
+    source_coded_area = source_info.width * source_info.height
+    output_coded_area = output_info.width * output_info.height
+    if output_coded_area < source_coded_area:
+        return False
+    if output_display == source_display:
+        return True
+    if min(*source_display, *output_display) <= 0:
+        return False
+    if _display_orientation(output_display) != _display_orientation(source_display):
+        return False
+
+    source_aspect = source_display[0] / source_display[1]
+    output_aspect = output_display[0] / output_display[1]
+    relative_aspect_error = abs(output_aspect / source_aspect - 1.0)
+    return relative_aspect_error <= _DISPLAY_ASPECT_RATIO_REL_TOLERANCE
+
+
 def parse_ffprobe_json(payload: dict[str, Any]) -> VideoInfo:
     streams = payload.get("streams") or []
     video_stream = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
@@ -278,7 +308,7 @@ def validate_output_file(
         errors.append(f"输出视频编码不是 h264：{output_info.video_codec}")
     if output_info.pix_fmt != TARGET_PIX_FMT:
         errors.append(f"输出像素格式不是 {TARGET_PIX_FMT}：{output_info.pix_fmt}")
-    if output_info.display_dimensions != source_info.display_dimensions:
+    if not _has_equivalent_display_geometry(source_info, output_info):
         errors.append("输出分辨率与源文件不一致。")
     target_fps = expected_fps or target_fps_for_mode(encoding_mode)
     if abs(output_info.fps - target_fps) > 0.5:

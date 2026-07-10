@@ -136,6 +136,107 @@ class EncodingTargetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    def test_output_validation_accepts_autorotated_anamorphic_geometry_with_preserved_coded_area(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "output.mp4"
+            output_path.write_bytes(b"video")
+            source_info = VideoInfo(
+                width=720,
+                height=576,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+                sample_aspect_ratio="64:45",
+                display_aspect_ratio="16:9",
+                rotation_degrees=90,
+                display_width=576,
+                display_height=1024,
+            )
+            output_info = VideoInfo(
+                width=576,
+                height=720,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+                sample_aspect_ratio="45:64",
+                display_aspect_ratio="9:16",
+                display_width=405,
+                display_height=720,
+            )
+
+            errors = validate_output_file(
+                output_path,
+                source_info,
+                output_info,
+                encoding_mode=MODE_H265_SMALL_FILE,
+            )
+
+        self.assertNotEqual(source_info.display_dimensions, output_info.display_dimensions)
+        self.assertEqual(source_info.width * source_info.height, output_info.width * output_info.height)
+        self.assertEqual(errors, [])
+
+    def test_output_validation_rejects_same_aspect_output_with_lower_coded_area(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "output.mp4"
+            output_path.write_bytes(b"video")
+            source_info = VideoInfo(
+                width=720,
+                height=576,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+                sample_aspect_ratio="64:45",
+                display_aspect_ratio="16:9",
+                rotation_degrees=90,
+                display_width=576,
+                display_height=1024,
+            )
+            output_info = VideoInfo(
+                width=360,
+                height=640,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+                sample_aspect_ratio="1:1",
+                display_aspect_ratio="9:16",
+                display_width=360,
+                display_height=640,
+            )
+
+            errors = validate_output_file(
+                output_path,
+                source_info,
+                output_info,
+                encoding_mode=MODE_H265_SMALL_FILE,
+            )
+
+        self.assertEqual(
+            source_info.display_dimensions[0] / source_info.display_dimensions[1],
+            output_info.display_dimensions[0] / output_info.display_dimensions[1],
+        )
+        self.assertLess(output_info.width * output_info.height, source_info.width * source_info.height)
+        self.assertEqual(errors, ["输出分辨率与源文件不一致。"])
+
     def test_output_validation_accepts_square_pixel_output_for_anamorphic_source(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             output_path = Path(temp_dir) / "output.mp4"
