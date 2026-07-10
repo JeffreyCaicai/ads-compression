@@ -174,7 +174,6 @@ class EncoderTwoPassTests(unittest.TestCase):
                 info=info,
                 encoding_mode=MODE_H265_PRODUCTION_AUTO_DETAIL_2PASS,
                 h265_encode_plan=plan,
-                target_fps=30.0,
             )
             process_1 = fake_process(["out_time_ms=5000000\n", "progress=end\n"])
             process_2 = fake_process(["out_time_ms=5000000\n", "progress=end\n"])
@@ -195,6 +194,7 @@ class EncoderTwoPassTests(unittest.TestCase):
         second_args = popen_mock.call_args_list[1].args[0]
         self.assertEqual(second_args[second_args.index("-b:v") + 1], "3200k")
         self.assertEqual(second_args[second_args.index("-r") + 1], "30")
+        self.assertEqual(job.target_fps, 30.0)
         validate_mock.assert_called()
         self.assertEqual(validate_mock.call_args.kwargs["expected_fps"], 30.0)
 
