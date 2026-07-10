@@ -95,6 +95,90 @@ class EncodingTargetTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
 
+    def test_output_validation_accepts_autorotated_matching_display_geometry(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "output.mp4"
+            output_path.write_bytes(b"video")
+            source_info = VideoInfo(
+                width=1920,
+                height=1080,
+                duration_sec=15.0,
+                fps=30.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+                rotation_degrees=90,
+                display_width=1080,
+                display_height=1920,
+            )
+            output_info = VideoInfo(
+                width=1080,
+                height=1920,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+            )
+
+            errors = validate_output_file(
+                output_path,
+                source_info,
+                output_info,
+                encoding_mode=MODE_H265_SMALL_FILE,
+            )
+
+        self.assertEqual(errors, [])
+
+    def test_output_validation_accepts_square_pixel_output_for_anamorphic_source(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_path = Path(temp_dir) / "output.mp4"
+            output_path.write_bytes(b"video")
+            source_info = VideoInfo(
+                width=720,
+                height=576,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="h264",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+                sample_aspect_ratio="64:45",
+                display_aspect_ratio="16:9",
+                display_width=1024,
+                display_height=576,
+            )
+            output_info = VideoInfo(
+                width=1024,
+                height=576,
+                duration_sec=15.0,
+                fps=25.0,
+                video_codec="hevc",
+                audio_codec="aac",
+                audio_sample_rate=48000,
+                audio_channels=2,
+                has_audio=True,
+                pix_fmt="yuv420p",
+                sample_aspect_ratio="1:1",
+            )
+
+            errors = validate_output_file(
+                output_path,
+                source_info,
+                output_info,
+                encoding_mode=MODE_H265_SMALL_FILE,
+            )
+
+        self.assertEqual(errors, [])
+
     def test_current_company_screen_resolutions_are_common(self):
         self.assertIn((1920, 1440), COMMON_SCREEN_RESOLUTIONS)
         self.assertIn((1080, 2560), COMMON_SCREEN_RESOLUTIONS)

@@ -6,7 +6,7 @@ import os
 import subprocess
 import threading
 from collections import deque
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -623,24 +623,11 @@ class Encoder:
         cancel_event: threading.Event,
     ) -> QualityCheckResult:
         assert job.info is not None
-        display_width, display_height = job.info.display_dimensions
-        quality_source_info = job.info
-        if (display_width, display_height) != (job.info.width, job.info.height):
-            quality_source_info = replace(
-                job.info,
-                width=display_width,
-                height=display_height,
-                sample_aspect_ratio="1:1",
-                display_aspect_ratio=None,
-                rotation_degrees=0,
-                display_width=display_width,
-                display_height=display_height,
-            )
         return run_quality_check(
             self.paths.ffmpeg,
             job.input_path,
             job.output_path,
-            quality_source_info,
+            job.info,
             job.small_detail_score,
             cancel_event=cancel_event,
         )

@@ -152,7 +152,7 @@ def parse_rotation_degrees(video_stream: dict[str, Any]) -> int:
         if value is None:
             continue
         try:
-            return int(round(float(value)))
+            return int(round(float(value))) % 360
         except (TypeError, ValueError):
             continue
     return 0
@@ -179,7 +179,7 @@ def display_dimensions(
     elif sample_ratio > 0:
         display_width = max(1, round(width * sample_ratio))
 
-    if abs(rotation_degrees) % 180 == 90:
+    if rotation_degrees % 360 in {90, 270}:
         display_width, display_height = display_height, display_width
     return display_width, display_height
 
@@ -278,7 +278,7 @@ def validate_output_file(
         errors.append(f"输出视频编码不是 h264：{output_info.video_codec}")
     if output_info.pix_fmt != TARGET_PIX_FMT:
         errors.append(f"输出像素格式不是 {TARGET_PIX_FMT}：{output_info.pix_fmt}")
-    if (output_info.width, output_info.height) != (source_info.width, source_info.height):
+    if output_info.display_dimensions != source_info.display_dimensions:
         errors.append("输出分辨率与源文件不一致。")
     target_fps = expected_fps or target_fps_for_mode(encoding_mode)
     if abs(output_info.fps - target_fps) > 0.5:

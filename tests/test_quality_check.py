@@ -139,6 +139,32 @@ class QualityCheckTests(unittest.TestCase):
             Path("ffmpeg"), Path("output.mp4"), 1920, 1080, 60.0, cancel_event=None
         )
 
+    def test_run_quality_check_uses_display_geometry_for_direct_callers(self):
+        source_info = make_video_info(duration_sec=10.0)
+        source_info.rotation_degrees = 90
+        source_info.display_width = 1080
+        source_info.display_height = 1920
+
+        with (
+            patch("quality_check._run_ssim_process", return_value="SSIM All:0.96") as ssim,
+            patch("quality_check.analyze_production_detail", return_value=production_detail(36.0)) as analyze,
+        ):
+            result = run_quality_check(
+                Path("ffmpeg"),
+                Path("source.mp4"),
+                Path("output.mp4"),
+                source_info,
+                source_detail=40.0,
+            )
+
+        ssim_args = ssim.call_args.args[0]
+        graph = ssim_args[ssim_args.index("-lavfi") + 1]
+        self.assertTrue(result.passed)
+        self.assertIn("scale=180:320:flags=lanczos", graph)
+        analyze.assert_called_once_with(
+            Path("ffmpeg"), Path("output.mp4"), 1080, 1920, 10.0, cancel_event=None
+        )
+
     def test_run_quality_check_rejects_nonfinite_segment_score(self):
         with patch("quality_check._run_ssim_process", return_value="SSIM All:nan"):
             with self.assertRaises(QualityCheckError):

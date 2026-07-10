@@ -107,8 +107,35 @@ class FFprobeParseTests(unittest.TestCase):
         info = parse_ffprobe_json(payload)
 
         self.assertEqual((info.width, info.height), (1920, 1080))
-        self.assertEqual(getattr(info, "rotation_degrees", None), -90)
+        self.assertEqual(getattr(info, "rotation_degrees", None), 270)
         self.assertEqual(getattr(info, "display_dimensions", None), (1080, 1920))
+
+    def test_parse_ffprobe_json_normalizes_rotation_sources_and_variants(self):
+        cases = (
+            ("tag_90", {"tags": {"rotate": "90"}}, 90),
+            ("tag_270", {"tags": {"rotate": "270"}}, 270),
+            ("tag_negative_90", {"tags": {"rotate": "-90"}}, 270),
+            ("matrix_90", {"side_data_list": [{"rotation": 90}]}, 90),
+            ("matrix_270", {"side_data_list": [{"rotation": 270}]}, 270),
+            ("matrix_450", {"side_data_list": [{"rotation": 450}]}, 90),
+        )
+        for label, rotation_metadata, expected_rotation in cases:
+            with self.subTest(label=label):
+                video_stream = {
+                    "codec_type": "video",
+                    "codec_name": "h264",
+                    "width": 1920,
+                    "height": 1080,
+                    "sample_aspect_ratio": "1:1",
+                    "display_aspect_ratio": "16:9",
+                    "avg_frame_rate": "30/1",
+                    **rotation_metadata,
+                }
+
+                info = parse_ffprobe_json({"format": {"duration": "10.0"}, "streams": [video_stream]})
+
+                self.assertEqual(info.rotation_degrees, expected_rotation)
+                self.assertEqual(info.display_dimensions, (1080, 1920))
 
     def test_parse_ffprobe_json_preserves_square_pixel_coded_dimensions(self):
         payload = {

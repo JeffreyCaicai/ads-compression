@@ -43,9 +43,10 @@ def estimate_source_video_bitrate_kbps(info: VideoInfo, input_path: Path | None 
 
 
 def build_best_detail_2pass_plan(info: VideoInfo) -> H265EncodePlan:
+    display_width, display_height = info.display_dimensions
     target = target_video_bitrate_kbps(
-        info.width,
-        info.height,
+        display_width,
+        display_height,
         MODE_H265_PRODUCTION_BEST_DETAIL_2PASS,
     )
     return H265EncodePlan(
@@ -62,7 +63,8 @@ def build_best_detail_2pass_plan(info: VideoInfo) -> H265EncodePlan:
 
 
 def build_maximum_detail_2pass_plan(info: VideoInfo) -> H265EncodePlan:
-    target = maximum_detail_target_video_bitrate_kbps(info.width, info.height)
+    display_width, display_height = info.display_dimensions
+    target = maximum_detail_target_video_bitrate_kbps(display_width, display_height)
     target_fps = 30.0 if info.fps >= 29.0 else 25.0
     gop = 60 if target_fps == 30.0 else 50
     keyint_min = 30 if target_fps == 30.0 else 25
@@ -115,11 +117,12 @@ def _risk_score(
 ) -> tuple[float, list[str]]:
     score = 0.0
     reasons: list[str] = []
-    pixels = info.width * info.height
+    display_width, display_height = info.display_dimensions
+    pixels = display_width * display_height
     if pixels >= 2_500_000:
         score += 15
         reasons.append("high_pixel_screen")
-    elif info.height > info.width:
+    elif display_height > display_width:
         score += 8
         reasons.append("portrait_screen")
 

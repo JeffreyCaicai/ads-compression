@@ -143,15 +143,15 @@ pass 2: libx265, -pass 2, same passlog, hvc1 MP4 tag, AAC 96k
 
 该模式通常接近一遍编码的两倍耗时，适合重点正式投放、细节要求更高的素材，或与云转码输出做 A/B 对比。CSV 报告中 `encoding_mode` 记录为 `h265_production_best_detail_2pass`，`content_complexity` 记录为 `production_best_detail`。
 
-V1.8 增加 H.265 Production - Auto Detail (2-pass)。该模式面向批量正式投放，先分析每个视频的生产细节风险，再自动选择 best_detail_2pass 或 maximum_detail_2pass。它不会替代现有 Best Detail (2-pass)，而是减少运营同事一次处理大量视频时逐条判断模式的工作量。
+V1.8 增加 H.265 Production - Auto Detail (2-pass)。该模式面向批量正式投放，先分析每个视频的生产细节风险，再自动选择 best_detail_2pass 或 maximum_detail_2pass。Best/Maximum 目标码率与 `portrait_screen` 风险按 DAR、SAR 和旋转元数据计算出的显示宽高选择；例如编码宽高为 1920x1080、显示宽高为 1080x1920 的素材使用竖屏 1800k/2600k 档位。它不会替代现有 Best Detail (2-pass)，而是减少运营同事一次处理大量视频时逐条判断模式的工作量。
 
 ```text
 CSV 报告新增 auto_selected_profile、auto_risk_score、auto_risk_reasons、source_video_bitrate_kbps、source_fps、peak_complexity_score、small_detail_score、peak_motion_score、scene_change_rate、target_gop 等字段。
 ```
 
-V1.9 为 Auto Detail 增加输出质量闭环。生产细节分析和质量检查都使用显示方向与宽高比感知的灰度抽样；显示几何由 FFprobe 的 DAR、SAR 和旋转元数据确定，编码宽高字段保持不变。横屏固定宽度 `320` 并按比例计算偶数高度；竖屏固定高度 `320` 并按比例计算偶数宽度；抽样频率为 `2fps`。源时长不超过 30 秒时分析一个从 0 秒开始的片段；更长的源文件取开头、中间和结尾各 10 秒，避免只用片头代表整支广告。生产分析在每个片段内计算空间细节、细节瓦片、运动和场景变化，使用 1 秒（2 帧）与 2 秒（4 帧）滚动窗口峰值，并记录空间细节、细节瓦片、运动的 P90/P95 指标。
+V1.9 为 Auto Detail 增加输出质量闭环。生产细节分析和质量检查都使用显示方向与宽高比感知的灰度抽样；显示几何由 FFprobe 的 DAR、SAR 和规范化到 0-359 度的旋转元数据确定。源文件编码宽高字段保留用于报告，但 FFmpeg 自动旋转为正向画面时，输出编码宽高可以互换；结构验证比较双方的有效显示宽高。横屏固定宽度 `320` 并按比例计算偶数高度；竖屏固定高度 `320` 并按比例计算偶数宽度；抽样频率为 `2fps`。源时长不超过 30 秒时分析一个从 0 秒开始的片段；更长的源文件取开头、中间和结尾各 10 秒，避免只用片头代表整支广告。生产分析在每个片段内计算空间细节、细节瓦片、运动和场景变化，使用 1 秒（2 帧）与 2 秒（4 帧）滚动窗口峰值，并记录空间细节、细节瓦片、运动的 P90/P95 指标。
 
-输出质量检查对相同时间片段分别运行 SSIM，并按片段等权平均；同时重新分析输出细节。通过阈值为 SSIM `>= 0.94`。源文件细节分数 `>= 20` 时，输出细节保留率必须 `>= 80%`；低于该源细节下限时不以保留率判定警告。质量分析和 SSIM 子进程都会观察取消事件，先 terminate，必要时在 5 秒后 kill，随后返回取消状态。
+输出质量检查对相同时间片段分别运行 SSIM，并按片段等权平均；FFmpeg 对源文件和输出文件分别应用自动旋转，再按有效显示几何缩放到同一抽样尺寸，同时重新分析输出细节。通过阈值为 SSIM `>= 0.94`。源文件细节分数 `>= 20` 时，输出细节保留率必须 `>= 80%`；低于该源细节下限时不以保留率判定警告。质量分析和 SSIM 子进程都会观察取消事件，先 terminate，必要时在 5 秒后 kill，随后返回取消状态。
 
 Auto Detail 先完成结构验证的 Best Detail 或 Maximum Detail 两遍输出，再运行质量检查。Best Detail 的质量警告或质量检查错误最多触发一次 Maximum Detail 重试；初始 Maximum Detail 不会重试，重试后的 Maximum Detail 也绝不再重试。质量警告表示该输出已通过结构、HEVC、音频、尺寸、像素格式和时长验证，但需要人工复核，不等于压缩失败。质量检查错误同样会记录为检查失败；若当前文件已是 Maximum Detail，则保留其结构有效输出供人工复核。
 

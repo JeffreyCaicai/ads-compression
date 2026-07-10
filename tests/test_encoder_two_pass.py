@@ -180,7 +180,7 @@ class EncoderTwoPassTests(unittest.TestCase):
 
 
 class AutoDetailQualityRetryTests(unittest.TestCase):
-    def test_quality_check_receives_display_geometry_without_mutating_coded_dimensions(self):
+    def test_quality_check_delegates_source_info_to_public_geometry_normalization(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             job = auto_detail_job(Path(temp_dir), PROFILE_BEST_DETAIL_2PASS)
             job.info.width = 1920
@@ -193,7 +193,7 @@ class AutoDetailQualityRetryTests(unittest.TestCase):
 
         sampling_info = quality_check.call_args.args[3]
         self.assertTrue(result.passed)
-        self.assertEqual((sampling_info.width, sampling_info.height), (1080, 1920))
+        self.assertIs(sampling_info, job.info)
         self.assertEqual((job.info.width, job.info.height), (1920, 1080))
 
     def test_best_quality_pass_returns_without_retry_and_emits_pass(self):

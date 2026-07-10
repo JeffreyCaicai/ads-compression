@@ -164,7 +164,8 @@ def _run_quality_check(
     source_detail: float,
     cancel_event: threading.Event | None,
 ) -> QualityCheckResult:
-    width, height = production_sample_dimensions(source_info.width, source_info.height)
+    source_width, source_height = source_info.display_dimensions
+    width, height = production_sample_dimensions(source_width, source_height)
     segment_scores = []
     for segment in production_sample_segments(source_info.duration_sec):
         stderr = _run_ssim_process(
@@ -181,8 +182,8 @@ def _run_quality_check(
     output_analysis = analyze_production_detail(
         ffmpeg_path,
         output_path,
-        source_info.width,
-        source_info.height,
+        source_width,
+        source_height,
         source_info.duration_sec,
         cancel_event=cancel_event,
     )
